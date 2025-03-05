@@ -1,0 +1,4 @@
+name: attention
+channels:
+  - defaults
+prefix: C:\Users\sgawalsh\anaconda3\envs\attention
