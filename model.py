@@ -306,9 +306,6 @@ class EncoderDecoder(Classifier):
         return torch.concat(outputs[1:], 1), attention_weights
     
 class HyperParameters:
-    """The base class of hyperparameters."""
-    def save_hyperparameters(self, ignore=[]):
-        raise NotImplemented
 
     def save_hyperparameters(self, ignore=[]):
         frame = inspect.currentframe().f_back
