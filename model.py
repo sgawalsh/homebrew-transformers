@@ -64,8 +64,8 @@ class DotProductAttention(nn.Module):
     def forward(self, queries, keys, values, valid_lens=None):
         # Swap the last two dimensions of keys with keys.transpose(1, 2)
         scores = torch.bmm(queries, keys.transpose(1, 2)) / math.sqrt(queries.shape[-1])
-        self.attention_weights = masked_softmax(scores, valid_lens) # scores shape batch_size * num_heads, no. of key-value pairs, no. of key-value pairs, plt.imshow(self.attention_weights[0].cpu().detach().numpy(), cmap = 'hot')
-        return torch.bmm(self.dropout(self.attention_weights), values)
+        self.attention_weights = masked_softmax(scores, valid_lens) # scores shape batch_size * num_heads, no. of key-value pairs, no. of key-value pairs
+        return torch.bmm(self.dropout(self.attention_weights), values) # plt.imshow(self.attention_weights[0].cpu().detach().numpy(), cmap = 'hot')
 
 class MultiHeadAttention(nn.Module):  
     """Multi-head attention."""
@@ -219,7 +219,6 @@ class TransformerDecoder(nn.Module):
     def forward(self, X, state):
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens)) # inputs to embeddings
         self._attention_weights = [[None] * len(self.blks) for _ in range (2)]
-
         
         if self.predictMode:
             dec_valid_lens = None
@@ -261,25 +260,15 @@ class TransformerEncoder(nn.Module):
             self.blks.add_module("block"+str(i), TransformerEncoderBlock(num_hiddens, ffn_num_hiddens, num_heads, dropout, use_bias))
 
     def forward(self, X, valid_lens):
-        # Since positional encoding values are between -1 and 1, the embedding
-        # values are multiplied by the square root of the embedding dimension
-        # to rescale before they are summed up
+        # Since positional encoding values are between -1 and 1, the embedding values are multiplied by the square root of the embedding dimension to rescale before they are summed up
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens))
         self.attention_weights = [None] * len(self.blks)
         for i, blk in enumerate(self.blks):
             X = blk(X, valid_lens)
             self.attention_weights[i] = blk.attention.attention.attention_weights
         return X
-
-class Classifier(nn.Module):  
-    """The base class of classification models.
-    Defined in :numref:`sec_classification`"""
-    def validation_step(self, batch):
-        Y_hat = self(*batch[:-1])
-        self.plot('loss', self.loss(Y_hat, batch[-1]), train=False)
-        self.plot('acc', self.accuracy(Y_hat, batch[-1]), train=False)
     
-class EncoderDecoder(Classifier):  
+class EncoderDecoder(nn.Module):  
     """The base class for the encoder--decoder architecture."""
     def __init__(self, encoder, decoder):
         super().__init__()
@@ -294,10 +283,10 @@ class EncoderDecoder(Classifier):
     
     def my_predict_step(self, src, src_valid_len, bos_pos, tgt_max_len, save_attention_weights=False):
         self.decoder.predictMode = True
-        outputs = [torch.full((src.shape[0], 1), bos_pos)] # bos tokens
         enc_all_outputs = self.encoder(src, src_valid_len)
         dec_state = self.decoder.init_state(enc_all_outputs, src_valid_len) # [enc_outputs, enc_valid_lens, [None] * self.num_blks] -> [enc_outputs, enc_valid_lens, decoder_block_states]
         attention_weights = []
+        outputs = [torch.full((src.shape[0], 1), bos_pos)] # bos tokens
         for _ in range(tgt_max_len):
             Y, dec_state = self.decoder(outputs[-1], dec_state) # latest predictions
             outputs.append(torch.argmax(Y, 2)) # append predictions
