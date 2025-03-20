@@ -5,7 +5,6 @@ import numpy as np
 from torch.nn import functional as F
 from math import floor, sqrt
 from torch.utils.tensorboard import SummaryWriter
-# import matplotlib.pyplot as plt
 
 
 
@@ -73,23 +72,22 @@ class visionTransformer(nn.Module):
 
     def forward(self, x):
         # Prepare patches
-        patches = x.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size)
-        patches = patches.permute(0, 2, 3, 4, 5, 1)
-        patches = patches.contiguous().view(x.size(0), -1, self.patch_size * self.patch_size * 3).to(torch.float32)
+        patches = x.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size) # extract patches along rows and columns
+        patches = patches.permute(0, 2, 3, 4, 5, 1) # channels to last dimension
+        patches = patches.contiguous().view(x.size(0), -1, self.patch_size * self.patch_size * 3).to(torch.float32) # group patches
 
         # Embed patches and add positional embedding
         x = self.patch_to_embedding(patches) + self.positional_embedding
 
         if self.classTokenMode:
-            x = torch.cat((self.classToken.expand(patches.size(0), -1, -1), x), 1)
+            x = torch.cat((self.classToken.expand(patches.size(0), -1, -1), x), 1) # concat class token and patches
 
         # Pass through transformer
         x = self.transformer(x, torch.full([x.size()[0]], self.transformerInputLength).to(set_device.device))
-        # x = self.transformer(x)
 
         # Classification
         x = x[:, 0, :].squeeze() if self.classTokenMode else x.mean(dim=1)
-        return self.mlp_head(x)
+        return self.mlp_head(x) # to class dim
 
     def _getPatches(self, x):
         patchesBatch = torch.zeros((x.size()[0], 64, 48))
@@ -121,7 +119,7 @@ def getBatch(i, folderName= "//cifar-10-batches-py//", fileRootName = "data_batc
 
     with open(fileName, 'rb') as f:
         dict = pickle.load(f, encoding='bytes')
-    return dict[b'labels'], dict[b'data']
+    return dict[b'labels'], torch.from_numpy(dict[b'data'].reshape(-1, 3, 32, 32) / 255) # normalize and reshape to (N, 3, 32, 32)
 
 def doubleBatch(labels, data, n=1):
     l = len(labels)
@@ -129,10 +127,27 @@ def doubleBatch(labels, data, n=1):
     for ndx in range(0, l, n):
         yield data[ndx:min(ndx + n, l)], labels[ndx:min(ndx + n, l)]
 
+def batchLoop(bLabels, bData, miniBatchLength, model, device, criterion, optim, e, epochs, runningLoss, runningAccuracy, count, isTrain):
+    for x, y in doubleBatch(torch.tensor(bLabels).to(device), bData, miniBatchLength):
+        yHat = model(x.to(device).to(torch.float32))
+        loss = criterion(yHat, y)
+        runningLoss += loss.item()
+        runningAccuracy += (yHat.argmax(1) == y).float().mean()
+
+        if isTrain:
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+        count +=1
+        print(f'{e}/{epochs} - Running Loss: {runningLoss / count:.3f} - Loss: {loss.item():.3f} - Accuracy: {runningAccuracy * 100 / count:.1f}')
+    
+    return runningLoss, runningAccuracy, count
+
 
 def train(miniBatchLength = 128, lr = 0.001, epochs = 10, classTokenMode = False):
     device = set_device.device
     model = visionTransformer(classTokenMode=classTokenMode).to(device)
+    # model = cnnClassifier().to(device) # compare against cnn
     optim = torch.optim.Adam(model.parameters(), lr = lr)
     criterion = nn.CrossEntropyLoss()
 
@@ -143,30 +158,20 @@ def train(miniBatchLength = 128, lr = 0.001, epochs = 10, classTokenMode = False
         runningLoss, runningAccuracy = 0.0, 0.0
         count = 0
 
-        for i in range(1, 5):
+        for i in range(1, 5): # training
             bLabels, bData = getBatch(i)
-
-            bData = torch.from_numpy(bData.reshape(-1, 3, 32, 32) / 255)  # normalize and reshape to (N, 3, 32, 32)
-
-            # plt.imshow(bData[0])
-            # plt.show()
             
-            for x, y in doubleBatch(torch.tensor(bLabels).to(device), bData, miniBatchLength):
-                yHat = model(x.to(device).to(torch.float32))
-                loss = criterion(yHat, y)
-                runningLoss += loss.item()
-                accuracy = (yHat.argmax(1) == y).float().mean()
-                runningAccuracy += accuracy
+            runningLoss, runningAccuracy, count = batchLoop(bLabels, bData, miniBatchLength, model, device, criterion, optim, e, epochs, runningLoss, runningAccuracy, count, isTrain=True)
 
-                optim.zero_grad()
-                loss.backward()
-                optim.step()
-                count +=1
-                print(f'{e}/{epochs} - Running Loss: {runningLoss / count:.3f} - Loss: {loss.item():.3f} - Accuracy: {runningAccuracy * 100 / count:.1f}')
         writer.add_scalar("Loss/train", runningLoss / count, e)
         writer.add_scalar("Accuracy/train", runningAccuracy / count, e)
-        f" test{runningLoss:.3f}"
 
+    bLabels, bData = getBatch(5) # evaluation
+    runningLoss, runningAccuracy = 0.0, 0.0
+    count = 0
+    runningLoss, runningAccuracy, count = batchLoop(bLabels, bData, miniBatchLength, model, device, criterion, optim, e, epochs, runningLoss, runningAccuracy, count, isTrain=False)
+    writer.add_scalar("Loss/eval", runningLoss / count, 0)
+    writer.add_scalar("Accuracy/eval", runningAccuracy / count, 0)
     writer.close()
 
-train(epochs = 1, classTokenMode=True)
+train(epochs = 5, classTokenMode=True)
