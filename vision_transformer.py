@@ -36,10 +36,10 @@ class VisionTransformerEncoder(nn.Module):  #@save
         for i in range(num_blks):
             self.blks.add_module("block"+str(i), TransformerEncoderBlock(num_hiddens, ffn_num_hiddens, num_heads, dropout, use_bias))
 
-    def forward(self, X, valid_lens):
+    def forward(self, X):
         self.attention_weights = [None] * len(self.blks)
         for i, blk in enumerate(self.blks):
-            X = blk(X, valid_lens)
+            X = blk(X, None)
             self.attention_weights[i] = blk.attention.attention.attention_weights
         return X
 
@@ -67,9 +67,6 @@ class visionTransformer(nn.Module):
             nn.LazyLinear(num_classes)
         )
 
-        self.transformerInputLength = self.num_patches + 1 * classTokenMode
-
-
     def forward(self, x):
         # Prepare patches
         patches = x.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size) # extract patches along rows and columns
@@ -83,7 +80,7 @@ class visionTransformer(nn.Module):
             x = torch.cat((self.classToken.expand(patches.size(0), -1, -1), x), 1) # concat class token and patches
 
         # Pass through transformer
-        x = self.transformer(x, torch.full([x.size()[0]], self.transformerInputLength).to(set_device.device))
+        x = self.transformer(x)
 
         # Classification
         x = x[:, 0, :].squeeze() if self.classTokenMode else x.mean(dim=1)
@@ -174,4 +171,4 @@ def train(miniBatchLength = 128, lr = 0.001, epochs = 10, classTokenMode = False
     writer.add_scalar("Accuracy/eval", runningAccuracy / count, 0)
     writer.close()
 
-train(epochs = 5, classTokenMode=True)
+train(epochs = 10, classTokenMode=True)
