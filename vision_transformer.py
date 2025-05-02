@@ -7,8 +7,7 @@ from math import floor, sqrt
 from torch.utils.tensorboard import SummaryWriter
 
 
-
-class cnnClassifier(nn.Module):
+class cnnClassifier(nn.Module): #simple convolutional model to compare against
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)

@@ -14,18 +14,13 @@ class AdditiveAttention(nn.Module):
 
     def forward(self, queries, keys, values, valid_lens):
         queries, keys = self.W_q(queries), self.W_k(keys)
-        # After dimension expansion, shape of queries: (batch_size, no. of
-        # queries, 1, num_hiddens) and shape of keys: (batch_size, 1, no. of
-        # key-value pairs, num_hiddens). Sum them up with broadcasting
+        # After dimension expansion, shape of queries: (batch_size, no. of queries, 1, num_hiddens) and shape of keys: (batch_size, 1, no. of key-value pairs, num_hiddens). Sum them up with broadcasting
         features = queries.unsqueeze(2) + keys.unsqueeze(1)
         features = torch.tanh(features)
-        # There is only one output of self.w_v, so we remove the last
-        # one-dimensional entry from the shape. Shape of scores: (batch_size,
-        # no. of queries, no. of key-value pairs)
+        # There is only one output of self.w_v, so we remove the last one-dimensional entry from the shape. Shape of scores: (batch_size, no. of queries, no. of key-value pairs)
         scores = self.w_v(features).squeeze(-1)
         self.attention_weights = masked_softmax(scores, valid_lens)
-        # Shape of values: (batch_size, no. of key-value pairs, value
-        # dimension)
+        # Shape of values: (batch_size, no. of key-value pairs, value dimension)
         return torch.bmm(self.dropout(self.attention_weights), values)
     
 # X: 3D tensor, valid_lens: 1D or 2D tensor
@@ -181,11 +176,7 @@ class TransformerDecoderBlock(nn.Module):
 
     def forward(self, X, state, dec_valid_lens):
         enc_outputs, enc_valid_lens = state[0], state[1]
-        # During training, all the tokens of any output sequence are processed
-        # at the same time, so state[2][self.i] is None as initialized. When
-        # decoding any output sequence token by token during prediction,
-        # state[2][self.i] contains representations of the decoded output at
-        # the i-th block up to the current time step
+        # During training, all the tokens of any output sequence are processed at the same time, so state[2][self.i] is None as initialized. When decoding any output sequence token by token during prediction, state[2][self.i] contains representations of the decoded output at the i-th block up to the current time step
         if state[2][self.i] is None:
             key_values = X
         else:
