@@ -214,7 +214,7 @@ class trainer:
                     
             runningLoss += loss.item() * self.data.batch_size
             try:
-                print(f'{self.i}/{self.epochs} - {i * self.data.batch_size}/{dataLength} - {100 * i * self.data.batch_size/dataLength:.3f}% - Running Loss: {runningLoss / i:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / i:.3f} - Speed: {(i * self.data.batch_size / (time() - start)):.3f}') # - Speed: {i * self.data.batch_size / (time() - start):.3f}
+                print(f'{self.i}/{self.epochs} - {i * self.data.batch_size}/{dataLength} - {100 * i * self.data.batch_size/dataLength:.3f}% - Running Loss: {runningLoss / i:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / i * 100:.2f} - Speed: {(i * self.data.batch_size / (time() - start)):.3f}') # - Speed: {i * self.data.batch_size / (time() - start):.3f}
             except ZeroDivisionError:
                 pass
 

@@ -2,18 +2,37 @@ import torch, trainer, os, model, data, set_device, pickle, matplotlib.pyplot as
 from modelDict import modelDict
 
 
-def compare_models(modelList):
+def compare_models(modelList, fileName = "results.pkl"):
     results = {}
 
     for modelName in modelList:
         myModel, myData, myTrainer = load_model_data_trainer(modelName)
         del(myData)
-        score = myTrainer.eval_cycle(myModel, modelName, showTranslations=False, calcBleu=False)
+        score = myTrainer.eval_cycle(myModel, modelName, showTranslations=False, calcBleu=True)
 
         results[modelName] = score
 
-    with open(f'{os.getcwd()}//results', 'wb+') as f:
+    with open(f'{os.getcwd()}//{fileName}', 'wb+') as f:
         pickle.dump(results, f)
+
+def show_results(fileName = "results.pkl"):
+
+    with open(f'{os.getcwd()}//{fileName}', 'rb') as f:
+        results = pickle.load(f)
+
+    values = results.values()
+
+    plt.subplot(2, 1, 1)
+    plt.bar(results.keys(), [x[0] for x in values])
+    plt.xlabel("Model")
+    plt.ylabel("Loss")
+    plt.title("Model Losses")
+    plt.subplot(2, 1, 2)
+    plt.bar(results.keys(), [x[1] for x in values])
+    plt.xlabel("Model")
+    plt.ylabel("Bleu Score")
+    plt.title("Bleu Scores")
+    plt.show()
     
 
 def load_model_data_trainer(modelName):
@@ -48,35 +67,24 @@ def eval_sample(n, myModel, myData, myTrainer):
             targ.append(token)
         print(f'{" ".join(src)} => {" ".join(trans)} => {" ".join(targ)}')
 
-def show_results():
-
-    with open(f'{os.getcwd()}//results', 'rb') as f:
-        results = pickle.load(f)
-
-    plt.bar(results.keys(), results.values())
-    plt.xlabel("Model")
-    plt.ylabel("Loss")
-    plt.title("Model Losses")
-    plt.show()
-
 device = set_device.device
 torch.set_default_device(device)
-batchSize = 2
-modelName = "Small"
+batchSize = 64
+modelName = "Full"
 myModel, myData, myTrainer = load_model_data_trainer(modelName)
 
 # # print(myModel)
 
-myTrainer.fit(myModel, 0.0001, epochs=7, showTranslations=False, loadModel=True, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True)
+# myTrainer.fit(myModel, 0.0001, epochs=7, showTranslations=False, loadModel=True, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True)
 
-myModel.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
+# myModel.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
 # myTrainer.eval_cycle(myModel, modelName, showTranslations=False, calcBleu=True)
 
-eval_sample(2, myModel, myData, myTrainer)
+# eval_sample(10, myModel, myData, myTrainer)
 
 # compare_models(modelDict.keys())
-# compare_models(["Full"])
-# show_results()
+# compare_models(["Full", "Small"])
+show_results()
 
 '''
 ENCODER
