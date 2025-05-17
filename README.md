@@ -2,13 +2,19 @@
 
 ## Overview
 
-This project recreates the model and processes used in the foundational [Attention Is All You Need](https://arxiv.org/abs/1706.03762) paper, and applies these techniques to the task of machine translation, using the europarl dataset. Also included is a vision transformer, which uses a transformer encoder on the task of image classification using the [cifar-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset.
+This project recreates the model and processes used in the foundational [Attention Is All You Need](https://arxiv.org/abs/1706.03762) paper, and applies these techniques to the task of machine translation, using the [europarl dataset](https://www.statmt.org/europarl/). Also included is a vision transformer, which uses a transformer encoder on the task of image classification using the [cifar-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset.
 
 The project uses pytorch to recreate the transformer models from scratch comprehensively from the top-level encoder-decoder model, down to the core dot product attention function, these models are then trained using a custom trainer class. The results of the training are viewable in the ```plots``` folder, and via tensorboard for the base and image classifcation models respectively.
 
-The ```data.py``` contains the code used to both massage, prune, and parse the data to be used in the model training.
+### Data
+
+The ```data.py``` contains code which performs data massaging and pruning, as well as the generation of target and source vocabularies in order to map each word to its tokenized representation. The data is divided into test and training sets and saved for further use. Also included is a '''europoarl_data''' class which provides torch DataLoader objects to be used during model training and testing.
 
 ## Instructions
+
+### Training
+
+The '''train.py''' file provides several methods to train, and test the model, as well as set model parameters. Model performance can also be easily tested and compared here.
 
 ### Custom Model
 
