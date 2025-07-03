@@ -1,4 +1,5 @@
 import pickle, torch, os, random, re, set_device
+from tqdm import tqdm
 
 def create_training_split(ratio = .8):
     dataset, en_vocab, src_max, fr_vocab, tgt_max = create_dataset('europarl-v7.fr-en.en', 'europarl-v7.fr-en.fr')
@@ -129,7 +130,7 @@ class europoarl_data:
         srcLens = torch.empty((dataLength), dtype = torch.int64)
         endTarg = torch.full((dataLength, self.num_steps), tgtPadInt, dtype=torch.int64)
 
-        for i, linePair in enumerate(data):
+        for i, linePair in enumerate(tqdm(data, total=dataLength)):
             for j, word in enumerate(linePair[0]):
                 src[i][j] = self.src_vocab[word]
             srcLens[i] = j + 1
