@@ -75,7 +75,7 @@ myModel, myData, myTrainer = load_model_data_trainer(modelName)
 
 # # print(myModel)
 
-# myTrainer.fit(myModel, 0.0001, epochs=7, showTranslations=False, loadModel=True, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True)
+myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=True, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = False)
 
 # myModel.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
 # myTrainer.eval_cycle(myModel, modelName, showTranslations=False, calcBleu=True)
@@ -84,7 +84,7 @@ myModel, myData, myTrainer = load_model_data_trainer(modelName)
 
 # compare_models(modelDict.keys())
 # compare_models(["Full", "Small"])
-show_results()
+# show_results()
 
 '''
 ENCODER
