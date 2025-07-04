@@ -4,3 +4,4 @@ __pycache__/*
 runs/*
 cifar-10-batches-py/*
 checkpoints/*
+plots/*

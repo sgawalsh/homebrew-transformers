@@ -5,6 +5,8 @@ from nltk.translate.bleu_score import sentence_bleu
 from time import time
 from torch.utils.tensorboard import SummaryWriter
 
+bleuSuffix, lossSuffix = "bestBleu", "bestLoss"
+
 class trainer:
     def __init__(self, myData):
 
@@ -14,23 +16,12 @@ class trainer:
         self.bleuWeights = {1: (1, 0, 0, 0), 2: (.5, .5, 0, 0), 3: (.33, .33, .33, 0), 4: (.25, .25, .25, .25)}
         self.evalDataloader, self.trainDataloader = None, None
 
-    def pickleData(self):
-        for batch in self.data.train_dataloader():
-            src = self.data.src_vocab.to_tokens(batch[0][0])
-            input = self.data.tgt_vocab.to_tokens(batch[1][0])
-            tgt = self.data.tgt_vocab.to_tokens(batch[3][0])
-
-            print(src, input, tgt)
-            with open(f'{os.getcwd()}//testData//2', 'wb+') as f:
-                pickle.dump(batch, f)
-            break
-
-    def fit(self, model, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True):
+    def fit(self, model, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
         self.model = model
         self.model.decoder.predictMode = False
 
         self.optim = torch.optim.Adam(self.model.parameters(), lr = lr)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, 10)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
         self.showTranslations = showTranslations
         self.modelName = modelName
         self.calcBleu = calcBleu
@@ -40,35 +31,13 @@ class trainer:
         self.epochs = epochs
 
         self.writer = SummaryWriter(log_dir = f'runs/encoderDecoder/{modelName}')
-
-        checkpoint_path = f'checkpoints/{modelName}_state.pth'
+        checkpointPath = f'checkpoints/{modelName}_state.pth'
         
         if loadModel:
             if fromBest:
-                try:
-                    self.model.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
-                    if not self.evalDataloader:
-                        print("Generate eval dataloader")
-                        self.evalDataloader = self.data.val_dataloader()
-                    self.bestLoss, self.bestBleu = self._train_cycle(True)
-                except FileNotFoundError:
-                    print("No file available to be loaded")
+                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath + bleuSuffix if bleuPriority else lossSuffix)
             else:
-                if os.path.exists(checkpoint_path):
-                    state = torch.load(checkpoint_path)
-                    self.i = state['epoch']
-                    self.model.load_state_dict(state['model_state'])
-                    self.optim.load_state_dict(state['optimizer_state'])
-                    trainLoss = state['train_loss']
-                    trainBleu = state['train_bleu']
-                    evalLoss = state['eval_loss']
-                    evalBleu = state['eval_bleu']
-                    self.bestLoss = state['best_loss']
-                    self.bestBleu = state['best_bleu']
-                    print(f'Checkpoint found, resumed from epoch {self.i}')
-                    self.epochs += self.i
-                else:
-                    print("No checkpoint found")
+                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath)
 
         if not self.evalDataloader:
             print("Generate eval dataloader")
@@ -76,6 +45,9 @@ class trainer:
         if not self.trainDataloader:
             print("Generate train dataloader")
             self.trainDataloader = self.data.train_dataloader()
+        if not loadModel:
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, round(self.data.trainDataLength / self.data.batch_size) * schedulerPatience)
+
         for _ in range(epochs):
             self.i += 1
             cycleLoss, bleuScore = self._train_cycle()
@@ -90,29 +62,18 @@ class trainer:
             evalBleu.append(bleuScore)
             self.writer.add_scalar('Loss/Eval', cycleLoss, self.i)
             self.writer.add_scalar('BLEU/Eval', bleuScore, self.i)
-            if bleuPriority:
-                if bleuScore > self.bestBleu:
-                    self.bestBleu = bleuScore
-                    torch.save(self.model.state_dict(), f'{os.getcwd()}//models//{modelName}')
-            elif cycleLoss < self.bestLoss:
+
+            if bleuScore > self.bestBleu:
+                self.bestBleu = bleuScore
+                self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = bleuSuffix)
+            if cycleLoss < self.bestLoss:
                 self.bestLoss = cycleLoss
-                torch.save(self.model.state_dict(), f'{os.getcwd()}//models//{modelName}')
+                self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = lossSuffix)
+
             print('Done eval')
 
             # save checkpoint
-            state = {
-                'epoch': self.i,
-                'model_state': self.model.state_dict(),
-                'optimizer_state': self.optim.state_dict(),
-                'train_loss': trainLoss,
-                'train_bleu': trainBleu,
-                'eval_loss': evalLoss,
-                'eval_bleu': evalBleu,
-                'best_loss': self.bestLoss,
-                'best_bleu': self.bestBleu
-            }
-            os.makedirs('checkpoints', exist_ok=True)
-            torch.save(state, checkpoint_path)
+            self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath)
 
         if shutDown:
             os.system('shutdown -s')
@@ -135,6 +96,40 @@ class trainer:
 
         plt.savefig(f'plots/{modelName}_{datetime.datetime.now().strftime("%Y-%m-%d_%H_%M_%S")}')
 
+    def saveModel(self, trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = ""):
+        state = {
+            'epoch': self.i,
+            'model_state': self.model.state_dict(),
+            'optimizer_state': self.optim.state_dict(),
+            'scheduler': self.scheduler.state_dict(),
+            'train_loss': trainLoss,
+            'train_bleu': trainBleu,
+            'eval_loss': evalLoss,
+            'eval_bleu': evalBleu,
+            'best_loss': self.bestLoss,
+            'best_bleu': self.bestBleu
+        }
+        os.makedirs('checkpoints', exist_ok=True)
+        torch.save(state, checkpointPath + suffix)
+
+    def loadModel(self, checkpointPath):
+        if os.path.exists(checkpointPath):
+            state = torch.load(checkpointPath)
+            self.i = state['epoch']
+            self.model.load_state_dict(state['model_state'])
+            self.optim.load_state_dict(state['optimizer_state'])
+            self.scheduler.load_state_dict(state["scheduler"])
+            trainLoss = state['train_loss']
+            trainBleu = state['train_bleu']
+            evalLoss = state['eval_loss']
+            evalBleu = state['eval_bleu']
+            self.bestLoss = state['best_loss']
+            self.bestBleu = state['best_bleu']
+            print(f'Checkpoint found, resumed from epoch {self.i}')
+            self.epochs += self.i
+            return trainLoss, trainBleu, evalLoss, evalBleu
+        else:
+            raise FileNotFoundError("No checkpoint found")
 
     def eval_cycle(self, model, modelName, showTranslations = True, calcBleu = True):
         self.model = model
