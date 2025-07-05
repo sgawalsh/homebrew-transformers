@@ -10,6 +10,15 @@ def create_training_split(ratio = .8):
     dump_file(test, "test.pkl")
     dump_file({'src_vocab': en_vocab, 'src_max': src_max, 'tgt_vocab': fr_vocab, 'tgt_max': tgt_max}, "vocabs.pkl")
 
+def french_regex(text):
+    # 1. Add leading apostrophe space
+    text = re.sub(r"(\w)'", r"\1 '", text)
+
+    # 2. Add trailing apostrophe space
+    text = re.sub(r"'(\w)", r"' \1", text)
+
+    return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
+
 def create_dataset(srcFile, tgtFile, maxLen = 16):
     with open(f'{os.getcwd()}//data//{srcFile}', mode='rt', encoding='utf-8') as f:
         srcLines = f.readlines()
@@ -26,7 +35,7 @@ def create_dataset(srcFile, tgtFile, maxLen = 16):
         if re.search(r'([.,?!"])(\S)', searchString) or re.search(r'([.,?!]){2,}', searchString) or re.search(r'([()$%&-])', searchString): # skip unusual punctuation
             continue
 
-        srcLine = re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[0]).replace('\n','').strip().lower().split() + ['<eos>'] # seperate puncuation from words
+        srcLine = re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[0]).replace('\n','').strip().lower().split() + ['<eos>'] # separate trailing puncuation from words
         tgtLine = ['<bos>'] + re.sub(r'(\w+)([\'])(\s)', r'\1\2', re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[1])).replace('\n','').strip().lower().split() + ['<eos>'] # and replace apostrophe with trailing space in french
 
         if max(len(srcLine), len(tgtLine)) > maxLen:
@@ -95,7 +104,7 @@ class vocab:
         return output
 
 
-class europoarl_data:
+class europarl_data:
     def __init__(self, batch_size = 128):
         
         with open(f'{os.getcwd()}//data//vocabs.pkl', 'rb') as f:
