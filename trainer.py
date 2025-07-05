@@ -1,7 +1,7 @@
-import os, pickle, torch, sys, datetime
+import os, torch, datetime
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
-from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from time import time
 from torch.utils.tensorboard import SummaryWriter
 
@@ -14,6 +14,7 @@ class trainer:
         self.bestLoss = float('inf')
         self.bestBleu = float('-inf')
         self.bleuWeights = {1: (1, 0, 0, 0), 2: (.5, .5, 0, 0), 3: (.33, .33, .33, 0), 4: (.25, .25, .25, .25)}
+        self.smoothingFn = SmoothingFunction().method1
         self.evalDataloader, self.trainDataloader = None, None
 
     def fit(self, model, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
@@ -31,7 +32,7 @@ class trainer:
         self.epochs = epochs
 
         self.writer = SummaryWriter(log_dir = f'runs/encoderDecoder/{modelName}')
-        checkpointPath = f'checkpoints/{modelName}_state.pth'
+        checkpointPath = f'checkpoints/{modelName}_state'
         
         if loadModel:
             if fromBest:
@@ -110,9 +111,10 @@ class trainer:
             'best_bleu': self.bestBleu
         }
         os.makedirs('checkpoints', exist_ok=True)
-        torch.save(state, checkpointPath + suffix)
+        torch.save(state, checkpointPath + suffix + ".pth")
 
     def loadModel(self, checkpointPath):
+        checkpointPath += '.pth'
         if os.path.exists(checkpointPath):
             state = torch.load(checkpointPath)
             self.i = state['epoch']
@@ -145,28 +147,24 @@ class trainer:
 
         return self._train_cycle(True)
 
-
     def _show_translations(self, inSrc, inPred, inTarg):
-        refs, cans = [], []
-        for line in zip(inSrc, inPred, inTarg):
+        for srcLine, predLine, targLine in zip(inSrc, inPred, inTarg):
             src, pred, targ = [], [], []
             if hasattr(self.data, 'src_vocab'):
-                for token in line[0]:
+                for token in srcLine:
                     if token == self.data.src_vocab['<eos>']:
                         break
                     src.append(self.data.src_vocab.to_token(token.item()))
-            for token in line[1]:
+            for token in predLine:
                 if token == self.data.tgt_vocab['<eos>']:
                     break
                 pred.append(self.data.tgt_vocab.to_token(token.item()))
-            for token in line[2]:
+            for token in targLine:
                 if token == self.data.tgt_vocab['<eos>']:
                     break
                 targ.append(self.data.tgt_vocab.to_token(token.item()))
 
             print(f'{f'src: {" ".join(src)}' if src else ""}\npred: {" ".join(pred)}\ntarg: {" ".join(targ)}\n')
-            refs.append(targ)
-            cans.append(pred)
     
     def _trim_eos(self, ref, can):
         eos = self.data.tgt_vocab['<eos>']
@@ -206,7 +204,7 @@ class trainer:
                 for j, (ref, can) in enumerate(zip(data[3].tolist(), torch.argmax(Y, 2).tolist()), 1):
                     ref, can = self._trim_eos(ref, can)
                     try:
-                        bleuScores += sentence_bleu([ref], can, weights=self.bleuWeights[min(4, len(can))])
+                        bleuScores += sentence_bleu([ref], can, weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
                     except KeyError:
                         pass
                 

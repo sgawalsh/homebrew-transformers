@@ -8,7 +8,7 @@ The project uses pytorch to recreate the transformer models from scratch compreh
 
 ### Data
 
-The ```data.py``` contains code which performs data massaging and pruning, as well as the generation of target and source vocabularies in order to map each word to its tokenized representation. The data is divided into test and training sets and saved for further use. Also included is a '''europoarl_data''' class which provides torch DataLoader objects to be used during model training and testing.
+The ```data.py``` contains code which performs data massaging and pruning, as well as the generation of target and source vocabularies in order to map each word to its tokenized representation. The data is divided into test and training sets and saved for further use. Also included is a '''europarl_data''' class which provides torch DataLoader objects to be used during model training and testing.
 
 ## Instructions
 
