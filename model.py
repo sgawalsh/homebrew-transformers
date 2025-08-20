@@ -264,9 +264,9 @@ class EncoderDecoder(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, enc_X, dec_X, enc_valid, *args):
-        enc_all_outputs = self.encoder(enc_X, enc_valid, *args)
-        dec_state = self.decoder.init_state(enc_all_outputs, enc_valid, *args)
+    def forward(self, enc_X, dec_X, enc_valid):
+        enc_all_outputs = self.encoder(enc_X, enc_valid)
+        dec_state = self.decoder.init_state(enc_all_outputs, enc_valid)
         # Return decoder output only
         return self.decoder(dec_X, dec_state)[0]
     

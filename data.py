@@ -125,7 +125,7 @@ class europarl_data:
         else:
             with open(f'{os.getcwd()}//data//train_tensors.pkl', 'rb') as f:
                 tensors = pickle.load(f)
-        self.trainDataLength = len(tensors)
+        self.trainDataLength = len(tensors[0])
         dataset = torch.utils.data.TensorDataset(*tensors)
         return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle = True, generator = torch.Generator(device=set_device.device))
     
@@ -138,7 +138,7 @@ class europarl_data:
         else:
             with open(f'{os.getcwd()}//data//test_tensors.pkl', 'rb') as f:
                 tensors = pickle.load(f)
-        self.valDataLength = len(tensors)
+        self.valDataLength = len(tensors[0])
         dataset = torch.utils.data.TensorDataset(*tensors)
         return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle=False, generator = torch.Generator(device=set_device.device))
     
