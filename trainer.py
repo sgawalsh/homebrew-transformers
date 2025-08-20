@@ -8,13 +8,13 @@ from torch.utils.tensorboard import SummaryWriter
 bleuSuffix, lossSuffix = "bestBleu", "bestLoss"
 
 class trainer:
-    def __init__(self, myData):
+    def __init__(self, myData, smoothing = False):
 
         self.data = myData
         self.bestLoss = float('inf')
         self.bestBleu = float('-inf')
         self.bleuWeights = {1: (1, 0, 0, 0), 2: (.5, .5, 0, 0), 3: (.33, .33, .33, 0), 4: (.25, .25, .25, .25)}
-        self.smoothingFn = SmoothingFunction().method1
+        self.smoothingFn = SmoothingFunction().method1 if smoothing else None
         self.evalDataloader, self.trainDataloader = None, None
 
     def fit(self, model, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
@@ -193,8 +193,8 @@ class trainer:
         start = time()
         for i, data in enumerate(dataGen, 1):
 
-            Y = self.model(*data[:-1]) # (srcTensor, tgtTensor t-1, srcValidLens)
-            loss = self._loss(Y, data[-1]) # (tgtTensor)
+            Y = self.model(*data[:-1]) # (srcTensor, tgtTensor t, srcValidLens)
+            loss = self._loss(Y, data[-1]) # (tgtTensor t+1)
 
             if self.showTranslations:
                 self._show_translations(data[0], torch.argmax(Y, 2), data[3])

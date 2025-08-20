@@ -207,7 +207,7 @@ class TransformerDecoder(nn.Module):
 
     def forward(self, X, state):
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens)) # inputs to embeddings
-        self._attention_weights = [[None] * len(self.blks) for _ in range (2)]
+        self._attention_weights = [[None] * len(self.blks) for _ in range(2)]
         
         if self.predictMode:
             dec_valid_lens = None

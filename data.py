@@ -19,7 +19,7 @@ def french_regex(text):
 
     return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
 
-def create_dataset(srcFile, tgtFile, maxLen = 16):
+def create_dataset(srcFile, tgtFile, maxLen = 8):
     with open(f'{os.getcwd()}//data//{srcFile}', mode='rt', encoding='utf-8') as f:
         srcLines = f.readlines()
     with open(f'{os.getcwd()}//data//{tgtFile}', mode='rt', encoding='utf-8') as f:
@@ -30,13 +30,14 @@ def create_dataset(srcFile, tgtFile, maxLen = 16):
     dataList = []
     srcVocab, tgtVocab, srcMaxLength, tgtMaxLength = dict(), dict(), 0, 0
 
-    for linePair in dataset:
+    for linePair in tqdm(dataset):
         searchString = linePair[0] + " " + linePair[1]
         if re.search(r'([.,?!"])(\S)', searchString) or re.search(r'([.,?!]){2,}', searchString) or re.search(r'([()$%&-])', searchString): # skip unusual punctuation
             continue
 
         srcLine = re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[0]).replace('\n','').strip().lower().split() + ['<eos>'] # separate trailing puncuation from words
-        tgtLine = ['<bos>'] + re.sub(r'(\w+)([\'])(\s)', r'\1\2', re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[1])).replace('\n','').strip().lower().split() + ['<eos>'] # and replace apostrophe with trailing space in french
+        # tgtLine = ['<bos>'] + re.sub(r'(\w+)([\'])(\s)', r'\1\2', re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[1])).replace('\n','').strip().lower().split() + ['<eos>'] # and replace apostrophe with trailing space in french
+        tgtLine = ['<bos>'] + french_regex(linePair[1]).replace('\n','').strip().lower().split() + ['<eos>']
 
         if max(len(srcLine), len(tgtLine)) > maxLen:
             continue
@@ -53,9 +54,9 @@ def create_dataset(srcFile, tgtFile, maxLen = 16):
     return dataList, set_vocab(srcVocab), srcMaxLength, set_vocab(tgtVocab), tgtMaxLength
 
 def set_vocab(vocab):
-    sorted = list(vocab.keys()) + ['<unk>', '<pad>']
-    sorted.sort()
-    for i, word in enumerate(sorted):
+    sortedKeys = sorted(list(vocab.keys()) + ['<unk>', '<pad>'])
+    print(len(sortedKeys))
+    for i, word in enumerate(sortedKeys):
         vocab[word] = i
     return vocab
 
@@ -73,7 +74,6 @@ def fix_vocabs():
 def dump_file(obj, fileName):
     with open(f'{os.getcwd()}//data//{fileName}', 'wb+') as f:
         pickle.dump(obj, f)
-
 
 class vocab:
     def __init__(self, inputDict: dict):
@@ -102,7 +102,6 @@ class vocab:
             output.append(self.to_token(el.item()))
         
         return output
-
 
 class europarl_data:
     def __init__(self, batch_size = 128):
@@ -145,7 +144,7 @@ class europarl_data:
             srcLens[i] = j + 1
             for j, word in enumerate(linePair[1]):
                 tgt[i][j] = self.tgt_vocab[word]
-            endTarg[i][0 : j] = tgt[i][1 : j + 1]
+            endTarg[i][0 : j] = tgt[i][1 : j + 1] # offset input translations by one for model targets
 
         return tuple([src, tgt, srcLens, endTarg])
     
