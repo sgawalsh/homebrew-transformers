@@ -116,19 +116,29 @@ class europarl_data:
         self.num_steps_src = vocabs['src_max']
         self.num_steps = vocabs['tgt_max']
 
-    def train_dataloader(self):
-        with open(f'{os.getcwd()}//data//train.pkl', 'rb') as f:
-            data = pickle.load(f)
-            self.trainDataLength = len(data)
-            tensors = self.to_tensors(data, self.trainDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
+    def train_dataloader(self, makeNew = False):
+        if makeNew or not os.path.exists(f'{os.getcwd()}//data//train_tensors.pkl'):
+            with open(f'{os.getcwd()}//data//train.pkl', 'rb') as f:
+                data = pickle.load(f)
+                tensors = self.to_tensors(data, self.trainDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
+                dump_file(tensors, "train_tensors.pkl")
+        else:
+            with open(f'{os.getcwd()}//data//train_tensors.pkl', 'rb') as f:
+                tensors = pickle.load(f)
+        self.trainDataLength = len(tensors)
         dataset = torch.utils.data.TensorDataset(*tensors)
         return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle = True, generator = torch.Generator(device=set_device.device))
     
-    def val_dataloader(self):
-        with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
-            data = pickle.load(f)
-            self.valDataLength = len(data)
-            tensors = self.to_tensors(data, self.valDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
+    def val_dataloader(self, makeNew = False):
+        if makeNew or not os.path.exists(f'{os.getcwd()}//data//test_tensors.pkl'):
+            with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
+                data = pickle.load(f)
+                tensors = self.to_tensors(data, self.valDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
+                dump_file(tensors, "test_tensors.pkl")
+        else:
+            with open(f'{os.getcwd()}//data//test_tensors.pkl', 'rb') as f:
+                tensors = pickle.load(f)
+        self.valDataLength = len(tensors)
         dataset = torch.utils.data.TensorDataset(*tensors)
         return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle=False, generator = torch.Generator(device=set_device.device))
     
