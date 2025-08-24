@@ -147,7 +147,7 @@ def train(miniBatchLength = 128, lr = 0.001, epochs = 10, classTokenMode = False
     optim = torch.optim.Adam(model.parameters(), lr = lr)
     criterion = nn.CrossEntropyLoss()
 
-    writer = SummaryWriter(f"runs/{"classToken" if classTokenMode else "mean"}")
+    writer = SummaryWriter(f"runs/vision/{"classToken" if classTokenMode else "mean"}")
 
     for e in range(1, epochs + 1):
         
