@@ -164,8 +164,8 @@ class trainer:
                     break
                 targ.append(self.data.tgt_vocab.to_token(token.item()))
 
-            print(f'{f'src: {" ".join(src)}' if src else ""}\npred: {" ".join(pred)}\ntarg: {" ".join(targ)}\n')
-    
+            print(f'{"src:" +  " ".join(src) if src else ""}\npred: {" ".join(pred)}\ntarg: {" ".join(targ)}\n')
+
     def _trim_eos(self, ref, can):
         eos = self.data.tgt_vocab['<eos>']
 
@@ -219,7 +219,7 @@ class trainer:
                     
             runningLoss += loss.item() * self.data.batch_size
             try:
-                print(f'{self.i}/{self.epochs} - {i * self.data.batch_size}/{dataLength} - {100 * i * self.data.batch_size/dataLength:.3f}% - Running Loss: {runningLoss / i:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / i * 100:.2f} - Speed: {(i * self.data.batch_size / (time() - start)):.3f}') # - Speed: {i * self.data.batch_size / (time() - start):.3f}
+                print(f'{self.i}/{self.epochs} - {i * self.data.batch_size:,}/{dataLength:,} - {100 * i * self.data.batch_size/dataLength:.3f}% - Running Loss: {runningLoss / i:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / i * 100:.2f} - Speed: {(i * self.data.batch_size / (time() - start)):.3f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
             except ZeroDivisionError:
                 pass
 
