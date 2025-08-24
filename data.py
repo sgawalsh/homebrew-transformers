@@ -1,5 +1,6 @@
 import pickle, torch, os, random, re, set_device
 from tqdm import tqdm
+from set_device import device
 
 def create_training_split(ratio = .8):
     dataset, en_vocab, src_max, fr_vocab, tgt_max = create_dataset('europarl-v7.fr-en.en', 'europarl-v7.fr-en.fr')
@@ -19,7 +20,7 @@ def french_regex(text):
 
     return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
 
-def create_dataset(srcFile, tgtFile, maxLen = 8):
+def create_dataset(srcFile, tgtFile, maxLen = 64):
     with open(f'{os.getcwd()}//data//{srcFile}', mode='rt', encoding='utf-8') as f:
         srcLines = f.readlines()
     with open(f'{os.getcwd()}//data//{tgtFile}', mode='rt', encoding='utf-8') as f:
@@ -117,28 +118,30 @@ class europarl_data:
         self.num_steps = vocabs['tgt_max']
 
     def train_dataloader(self, makeNew = False):
-        if makeNew or not os.path.exists(f'{os.getcwd()}//data//train_tensors.pkl'):
+        if makeNew or not os.path.exists(f'{os.getcwd()}//data//train_tensors_{device}.pkl'):
             with open(f'{os.getcwd()}//data//train.pkl', 'rb') as f:
                 data = pickle.load(f)
+                self.trainDataLength = len(data)
                 tensors = self.to_tensors(data, self.trainDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
-                dump_file(tensors, "train_tensors.pkl")
+                dump_file(tensors, f"train_tensors_{device}.pkl")
         else:
-            with open(f'{os.getcwd()}//data//train_tensors.pkl', 'rb') as f:
+            with open(f'{os.getcwd()}//data//train_tensors_{device}.pkl', 'rb') as f:
                 tensors = pickle.load(f)
-        self.trainDataLength = len(tensors[0])
+            self.trainDataLength = len(tensors[0])
         dataset = torch.utils.data.TensorDataset(*tensors)
         return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle = True, generator = torch.Generator(device=set_device.device))
     
     def val_dataloader(self, makeNew = False):
-        if makeNew or not os.path.exists(f'{os.getcwd()}//data//test_tensors.pkl'):
+        if makeNew or not os.path.exists(f'{os.getcwd()}//data//test_tensors_{device}.pkl'):
             with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
                 data = pickle.load(f)
+                self.valDataLength = len(data)
                 tensors = self.to_tensors(data, self.valDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
-                dump_file(tensors, "test_tensors.pkl")
+                dump_file(tensors, f"test_tensors_{device}.pkl")
         else:
-            with open(f'{os.getcwd()}//data//test_tensors.pkl', 'rb') as f:
+            with open(f'{os.getcwd()}//data//test_tensors_{device}.pkl', 'rb') as f:
                 tensors = pickle.load(f)
-        self.valDataLength = len(tensors[0])
+            self.valDataLength = len(tensors[0])
         dataset = torch.utils.data.TensorDataset(*tensors)
         return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle=False, generator = torch.Generator(device=set_device.device))
     

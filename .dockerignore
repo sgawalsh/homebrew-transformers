@@ -1,0 +1,10 @@
+__pycache__/
+data/
+runs/
+*.pyc
+*.ipynb_checkpoints
+*.pt
+*.pth
+*.h5
+.env
+.git
