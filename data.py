@@ -20,7 +20,7 @@ def french_regex(text):
 
     return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
 
-def create_dataset(srcFile, tgtFile, maxLen = 64):
+def create_dataset(srcFile, tgtFile, maxLen = 64): # maxLen determines maximum sentence length for source and target data
     with open(f'{os.getcwd()}//data//{srcFile}', mode='rt', encoding='utf-8') as f:
         srcLines = f.readlines()
     with open(f'{os.getcwd()}//data//{tgtFile}', mode='rt', encoding='utf-8') as f:

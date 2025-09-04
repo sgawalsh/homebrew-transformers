@@ -35,7 +35,7 @@ def masked_softmax(X, valid_lens):
     else:
         shape = X.shape
         if valid_lens.dim() == 1: # encoder, decoder attention 2 path
-            valid_lens = torch.repeat_interleave(valid_lens, shape[1])
+            valid_lens = torch.repeat_interleave(valid_lens, shape[1]) # repeat valid lens by sentence length
         else: # decoder attention 1 train path
             valid_lens = valid_lens.reshape(-1)
         # On the last axis, replace masked elements with a very large negative value, whose exponentiation outputs 0
