@@ -1,6 +1,7 @@
 import pickle, torch, os, random, re, set_device
 from tqdm import tqdm
 from set_device import device
+from settings import maxLen
 
 def create_training_split(ratio = .8):
     dataset, en_vocab, src_max, fr_vocab, tgt_max = create_dataset('europarl-v7.fr-en.en', 'europarl-v7.fr-en.fr')
@@ -20,7 +21,7 @@ def french_regex(text):
 
     return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
 
-def create_dataset(srcFile, tgtFile, maxLen = 64): # maxLen determines maximum sentence length for source and target data
+def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence length for source and target data
     with open(f'{os.getcwd()}//data//{srcFile}', mode='rt', encoding='utf-8') as f:
         srcLines = f.readlines()
     with open(f'{os.getcwd()}//data//{tgtFile}', mode='rt', encoding='utf-8') as f:

@@ -1,3 +1,6 @@
+maxLen = 32
+modelName = "Small"
+
 modelDict = {
     "Full": {"num_hiddens": 512, "num_blks": 6, "dropout": 0.1, "ffn_num_hiddens": 2048, "num_heads": 8},
     "FullNoDrop": {"num_hiddens": 512, "num_blks": 6, "dropout": 0.0, "ffn_num_hiddens": 2048, "num_heads": 8},

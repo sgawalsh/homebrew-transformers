@@ -117,7 +117,7 @@ def getLoss(Y_hat, Y, averaged=True):
         return F.cross_entropy(Y_hat, Y, reduction='mean' if averaged else 'none', label_smoothing=0.1)
 
 def trainLangModel():
-    from modelDict import modelDict
+    from settings import modelDict
     modelName = "Full"
     params = modelDict[modelName]
 
