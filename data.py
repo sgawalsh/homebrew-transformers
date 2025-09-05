@@ -149,6 +149,7 @@ class europarl_data:
         src = torch.full((dataLength, self.num_steps_src), srcPadInt, dtype=torch.int64)
         tgt = torch.full((dataLength, self.num_steps), tgtPadInt, dtype=torch.int64)
         srcLens = torch.empty((dataLength), dtype = torch.int64)
+        tgtLens = torch.empty((dataLength), dtype = torch.int64)
         endTarg = torch.full((dataLength, self.num_steps), tgtPadInt, dtype=torch.int64)
 
         for i, linePair in enumerate(tqdm(data, total=dataLength)):
@@ -157,9 +158,10 @@ class europarl_data:
             srcLens[i] = j + 1
             for j, word in enumerate(linePair[1]):
                 tgt[i][j] = self.tgt_vocab[word]
+            tgtLens[i] = j + 1
             endTarg[i][0 : j] = tgt[i][1 : j + 1] # offset input translations by one for model targets
 
-        return tuple([src, tgt, srcLens, endTarg])
+        return tuple([src, tgt, srcLens, tgtLens, endTarg])
     
     def get_rand_eval(self, n):
         with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:

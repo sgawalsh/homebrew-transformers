@@ -1,63 +1,42 @@
 import math, torch, inspect, os
 from torch import nn
-
-class AdditiveAttention(nn.Module):  
-    """Additive attention."""
-    def __init__(self, num_hiddens, dropout, **kwargs):
-        super(AdditiveAttention, self).__init__(**kwargs)
-        self.W_k = nn.LazyLinear(num_hiddens, bias=False)
-        self.W_q = nn.LazyLinear(num_hiddens, bias=False)
-        self.w_v = nn.LazyLinear(1, bias=False)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, queries, keys, values, valid_lens):
-        queries, keys = self.W_q(queries), self.W_k(keys)
-        # After dimension expansion, shape of queries: (batch_size, no. of queries, 1, num_hiddens) and shape of keys: (batch_size, 1, no. of key-value pairs, num_hiddens). Sum them up with broadcasting
-        features = queries.unsqueeze(2) + keys.unsqueeze(1)
-        features = torch.tanh(features)
-        # There is only one output of self.w_v, so we remove the last one-dimensional entry from the shape. Shape of scores: (batch_size, no. of queries, no. of key-value pairs)
-        scores = self.w_v(features).squeeze(-1)
-        self.attention_weights = masked_softmax(scores, valid_lens)
-        # Shape of values: (batch_size, no. of key-value pairs, value dimension)
-        return torch.bmm(self.dropout(self.attention_weights), values)
     
-# X: 3D tensor, valid_lens: 1D or 2D tensor
-def sequence_mask(X, valid_lens, value=0):
-        mask = torch.arange(1, X.size(1) + 1, dtype=torch.float32, device=X.device)[None, :] > valid_lens[:, None]
-        X[mask] = value
-        return X
-
-def masked_softmax(X, valid_lens):  
-    """Perform softmax operation by masking elements on the last axis."""
-    
-    if valid_lens is None: # decoder attention 1 predict path
-        return nn.functional.softmax(X, dim=-1)
-    else:
+def apply_padding_mask(X, valid_lens, value=float('-inf')):
         shape = X.shape
-        if valid_lens.dim() == 1: # encoder, decoder attention 2 path
-            valid_lens = torch.repeat_interleave(valid_lens, shape[1]) # repeat valid lens by sentence length
-        else: # decoder attention 1 train path
-            valid_lens = valid_lens.reshape(-1)
-        # On the last axis, replace masked elements with a very large negative value, whose exponentiation outputs 0
-        X = sequence_mask(X.reshape(-1, shape[-1]), valid_lens, value=-1e6)
-        return nn.functional.softmax(X.reshape(shape), dim=-1)
+        X = X.reshape(-1, shape[-1])
+        mask = torch.arange(1, X.size(1) + 1, dtype=torch.float32, device=X.device)[None, :] > valid_lens[:, None]
+        mask = torch.repeat_interleave(mask, X.size(0) // valid_lens.size(0), dim = 0)
+        X[mask] = value
+        return X.reshape(shape)
 
 class DotProductAttention(nn.Module):
-    """Scaled dot product attention.
-
-    Defined in :numref:`subsec_batch_dot`"""
     def __init__(self, dropout):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
 
-    # Shape of queries: (batch_size, no. of queries, d)
-    # Shape of keys: (batch_size, no. of key-value pairs, d)
-    # Shape of values: (batch_size, no. of key-value pairs, value dimension)
-    # Shape of valid_lens: (batch_size,) or (batch_size, no. of queries)
-    def forward(self, queries, keys, values, valid_lens=None):
+    # Shape of qkv: (batch_size, no. of queries, num_hiddens)
+    # Shape of valid_lens: (batch_size * num_heads) or None
+    def forward(self, queries, keys, values, valid_lens=None, causal: bool = False):
         # Swap the last two dimensions of keys with keys.transpose(1, 2)
         scores = torch.bmm(queries, keys.transpose(1, 2)) / math.sqrt(queries.shape[-1])
-        self.attention_weights = masked_softmax(scores, valid_lens) # scores shape batch_size * num_heads, no. of key-value pairs, no. of key-value pairs
+
+        if valid_lens is not None: # all paths except decoder attention 1 predict path
+            # Build a mask initialized as all False
+            mask = torch.zeros_like(scores, dtype=torch.bool)
+            if causal: # decoder attention 1 path
+                seq_len = scores.size(-1)
+                causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=scores.device, dtype=torch.bool), diagonal=1)
+                mask |= causal_mask.unsqueeze(0)
+
+            # (batch_size * num_heads, num_queries, num_keys)
+            pad_mask = torch.arange(scores.size(-1), device=scores.device)[None, :] >= valid_lens[:, None]
+            pad_mask = pad_mask.unsqueeze(1).expand(-1, scores.size(1), -1)
+            mask |= pad_mask
+
+            # Apply combined mask
+            scores = scores.masked_fill(mask, float('-inf'))
+
+        self.attention_weights = nn.functional.softmax(scores, dim=-1)
         return torch.bmm(self.dropout(self.attention_weights), values) # plt.imshow(self.attention_weights[0].cpu().detach().numpy(), cmap = 'hot')
 
 class MultiHeadAttention(nn.Module):  
@@ -65,20 +44,16 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, num_hiddens, num_heads, dropout, bias=False, **kwargs):
         super().__init__()
         self.num_heads = num_heads
-        # self.attention = AdditiveAttention(num_hiddens=num_hiddens, dropout=dropout)
         self.attention = DotProductAttention(dropout=dropout)
         self.W_q = nn.LazyLinear(num_hiddens, bias=bias)
         self.W_k = nn.LazyLinear(num_hiddens, bias=bias)
         self.W_v = nn.LazyLinear(num_hiddens, bias=bias)
         self.W_o = nn.LazyLinear(num_hiddens, bias=bias)
 
-    def forward(self, queries, keys, values, valid_lens):
-        # Shape of queries, keys, or values:
-        # (batch_size, no. of queries or key-value pairs, num_hiddens)
+    def forward(self, queries, keys, values, valid_lens, causal: bool = False):
+        # Shape of queries, keys, or values: (batch_size, no. of queries or key-value pairs, num_hiddens)
         # Shape of valid_lens: (batch_size,) or (batch_size, no. of queries)
-        # After transposing, shape of output queries, keys, or values:
-        # (batch_size * num_heads, no. of queries or key-value pairs,
-        # num_hiddens / num_heads)
+        # After transposing, shape of output queries, keys, or values:(batch_size * num_heads, no. of queries or key-value pairs, num_hiddens / num_heads)
         queries = self.transpose_qkv(self.W_q(queries))
         keys = self.transpose_qkv(self.W_k(keys))
         values = self.transpose_qkv(self.W_v(values))
@@ -88,7 +63,7 @@ class MultiHeadAttention(nn.Module):
             valid_lens = torch.repeat_interleave(valid_lens, repeats=self.num_heads, dim=0)
 
         # Shape of output: (batch_size * num_heads, no. of queries, num_hiddens / num_heads)
-        output = self.attention(queries, keys, values, valid_lens)
+        output = self.attention(queries, keys, values, valid_lens, causal)
         # Shape of output_concat: (batch_size, no. of queries, num_hiddens)
         output_concat = self.transpose_output(output)
         return self.W_o(output_concat)
@@ -172,8 +147,8 @@ class TransformerDecoderBlock(nn.Module):
         self.ffn = PositionWiseFFN(ffn_num_hiddens, num_hiddens)
         self.addnorm3 = AddNorm(num_hiddens, dropout)
 
-    def forward(self, X, state, dec_valid_lens):
-        enc_outputs, enc_valid_lens = state[0], state[1]
+    def forward(self, X, state):
+        enc_outputs, enc_valid_lens, dec_valid_lens = state[0], state[1], state[3]
         # During training, all the tokens of any output sequence are processed at the same time, so state[2][self.i] is None as initialized. When decoding any output sequence token by token during prediction, state[2][self.i] contains representations of the decoded output at the i-th block up to the current time step
         if state[2][self.i] is None:
             key_values = X
@@ -181,7 +156,7 @@ class TransformerDecoderBlock(nn.Module):
             key_values = torch.cat((state[2][self.i], X), dim=1) #append preds
         state[2][self.i] = key_values
         # Self-attention
-        X2 = self.attention1(X, key_values, key_values, dec_valid_lens)
+        X2 = self.attention1(X, key_values, key_values, dec_valid_lens, True)
         Y = self.addnorm1(X, X2)
         # Encoder-decoder attention. Shape of enc_outputs:
         # (batch_size, num_steps, num_hiddens)
@@ -202,20 +177,15 @@ class TransformerDecoder(nn.Module):
         self.dense = nn.LazyLinear(vocab_size)
         self.predictMode = False
 
-    def init_state(self, enc_outputs, enc_valid_lens):
-        return [enc_outputs, enc_valid_lens, [None] * self.num_blks]
+    def init_state(self, enc_outputs, enc_valid_lens, dec_valid_lens=None):
+        return [enc_outputs, enc_valid_lens, [None] * self.num_blks, dec_valid_lens]
 
     def forward(self, X, state):
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens)) # inputs to embeddings
         self._attention_weights = [[None] * len(self.blks) for _ in range(2)]
         
-        if self.predictMode:
-            dec_valid_lens = None
-        else: # Shape of dec_valid_lens: (batch_size, num_steps), where every row is [1, 2, ..., num_steps]
-            batch_size, num_steps, _ = X.shape
-            dec_valid_lens = torch.arange(1, num_steps + 1, device=X.device).repeat(batch_size, 1)
         for i, blk in enumerate(self.blks):
-            X, state = blk(X, state, dec_valid_lens)
+            X, state = blk(X, state)
             self._attention_weights[0][i] = blk.attention1.attention.attention_weights # Decoder self-attention weights
             self._attention_weights[1][i] = blk.attention2.attention.attention_weights # Encoder-decoder attention weights
         return self.dense(X), state
@@ -264,9 +234,9 @@ class EncoderDecoder(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, enc_X, dec_X, enc_valid):
+    def forward(self, enc_X, dec_X, enc_valid, dec_valid):
         enc_all_outputs = self.encoder(enc_X, enc_valid)
-        dec_state = self.decoder.init_state(enc_all_outputs, enc_valid)
+        dec_state = self.decoder.init_state(enc_all_outputs, enc_valid, dec_valid)
         # Return decoder output only
         return self.decoder(dec_X, dec_state)[0]
     

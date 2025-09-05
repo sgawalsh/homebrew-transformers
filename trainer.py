@@ -21,7 +21,7 @@ class trainer:
         self.model = model
         self.model.decoder.predictMode = False
 
-        self.optim = torch.optim.Adam(self.model.parameters(), lr = lr)
+        self.optim = torch.optim.Adam(self.model.parameters(), lr = lr, betas=(0.9, 0.98), eps=1e-9)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
         self.showTranslations = showTranslations
         self.modelName = modelName
@@ -193,15 +193,15 @@ class trainer:
         start = time()
         for i, data in enumerate(dataGen, 1):
 
-            Y = self.model(*data[:-1]) # (srcTensor, tgtTensor t, srcValidLens)
-            loss = self._loss(Y, data[-1]) # (tgtTensor t+1)
+            Y = self.model(*data[:-1]) # (srcTensor, tgtTensor(t), srcValidLens, tgtValidLens)
+            loss = self._loss(Y, data[-1]) # (tgtTensor(t+1))
 
             if self.showTranslations:
-                self._show_translations(data[0], torch.argmax(Y, 2), data[3])
+                self._show_translations(data[0], torch.argmax(Y, 2), data[-1])
             
             if self.calcBleu:
                 bleuScores = 0.0
-                for j, (ref, can) in enumerate(zip(data[3].tolist(), torch.argmax(Y, 2).tolist()), 1):
+                for j, (ref, can) in enumerate(zip(data[-1].tolist(), torch.argmax(Y, 2).tolist()), 1):
                     ref, can = self._trim_eos(ref, can)
                     try:
                         bleuScores += sentence_bleu([ref], can, weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
