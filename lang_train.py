@@ -1,8 +1,8 @@
-import audio_data, data, wav_2_letter, torch, os, set_device, ast, random, model, pickle
+import audio_data, data, wav_2_letter, torch, os, settings, ast, random, model, pickle
 from torch.nn import functional as F
 
 delim = "*~*"
-torch.set_default_device(set_device.device)
+torch.set_default_device(settings.device)
 
 def prepData():
     mode = "letter"
@@ -108,7 +108,7 @@ class batchPrepper:
             self.maxes = pickle.load(f)
 
     def prepBatch(self, x, y):
-        return torch.unsqueeze(torch.Tensor(audio_data.squashCtc([self.src[el] for el in x])), 0).to(set_device.device, torch.int32), torch.unsqueeze(torch.Tensor([self.bos] + [self.tgt[el] for el in ast.literal_eval(y)] + [self.eos]), 0).to(set_device.device, torch.int64)
+        return torch.unsqueeze(torch.Tensor(audio_data.squashCtc([self.src[el] for el in x])), 0).to(settings.device, torch.int32), torch.unsqueeze(torch.Tensor([self.bos] + [self.tgt[el] for el in ast.literal_eval(y)] + [self.eos]), 0).to(settings.device, torch.int64)
 
 def getLoss(Y_hat, Y, averaged=True):
         """Defined in :numref:`sec_softmax_concise`"""

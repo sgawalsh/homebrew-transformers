@@ -1,4 +1,4 @@
-import os, librosa, pickle, numpy, soundfile, random, torch, data, set_device, nltk
+import os, librosa, pickle, numpy, soundfile, random, torch, data, settings, nltk
 
 base_channels = 13
 phoneme_map = {'<blank>': 0, 'AA' : 1, 'AE': 2, 'AH': 3, 'AO': 4, 'AW': 5, 'AY': 6, 'B': 7, 'CH': 8, 'D': 9, 'DH' : 10, 'EH': 11, 'ER': 12, 'EY': 13, 'F': 14, 'G': 15, 'HH': 16, 'IH': 17, 'IY': 18, 'JH': 19, 'K': 20, 'L': 21, 'M': 22, 'N': 23, 'NG': 24, 'OW': 25, 'OY': 26, 'P': 27, 'R': 28, 'S': 29, 'SH': 30, 'T': 31, 'TH': 32, 'UH': 33, 'UW': 34, 'V': 35, 'W': 36, 'Y': 37, 'Z': 38, 'ZH': 39, ' ': 40}
@@ -130,7 +130,7 @@ def data_generator_torch_batch(batch_size, isEval, isTrain = True, path = "data\
     tgt_max = vocabData["tgt_max"]
             
     for f_batch in batch(files, batch_size):
-        x, y, x_lengths, y_targ = [], torch.full((batch_size, tgt_max), vocab["<pad>"], dtype=torch.int32, device=set_device.device), torch.zeros(batch_size, dtype=torch.int32, device=set_device.device), torch.full((batch_size, tgt_max), vocab["<pad>"], dtype=torch.int64, device=set_device.device)
+        x, y, x_lengths, y_targ = [], torch.full((batch_size, tgt_max), vocab["<pad>"], dtype=torch.int32, device=settings.device), torch.zeros(batch_size, dtype=torch.int32, device=settings.device), torch.full((batch_size, tgt_max), vocab["<pad>"], dtype=torch.int64, device=settings.device)
         
         for i, f in enumerate(f_batch):
             xy = pickle.load(open(f"{path}{f}", "rb"))
@@ -138,7 +138,7 @@ def data_generator_torch_batch(batch_size, isEval, isTrain = True, path = "data\
             sentence = [vocab[word] for word in xy[1]]
             x_lengths[i] = xy[0].shape[0]
 
-            x.append(torch.from_numpy(xy[0]).to(set_device.device))
+            x.append(torch.from_numpy(xy[0]).to(settings.device))
             y[i][:len(sentence)] = torch.Tensor(sentence)
             y_targ[i][:len(sentence) - 1] = y[i][1:len(sentence)]
         
@@ -176,7 +176,7 @@ def ctc_generator(batch_size, isEval, isTrain = True, mode = "word", path = "dat
     yield len(files)
     path = f"{path}{"eval" if isEval else "train"}\\"
     for f_batch in batch(files, batch_size):
-        x, x_lengths, y_targ = [], torch.zeros(batch_size, dtype=torch.int32, device=set_device.device), []
+        x, x_lengths, y_targ = [], torch.zeros(batch_size, dtype=torch.int32, device=settings.device), []
         
         for i, f in enumerate(f_batch):
             xy = pickle.load(open(f"{path}{f}", "rb"))
@@ -184,7 +184,7 @@ def ctc_generator(batch_size, isEval, isTrain = True, mode = "word", path = "dat
             y_targ.append(to_sequence(xy[1][1:-1], fileName = f))
             x_lengths[i] = xy[0].shape[0]
 
-            x.append(torch.from_numpy(xy[0]).to(set_device.device))
+            x.append(torch.from_numpy(xy[0]).to(settings.device))
         
         yield x, x_lengths, y_targ
 

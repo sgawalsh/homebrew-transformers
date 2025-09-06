@@ -1,5 +1,5 @@
-import torch, trainer, os, model, data, set_device, pickle, decode, matplotlib.pyplot as plt
-from modelDict import modelDict
+import torch, trainer, os, model, data, settings, pickle, decode, matplotlib.pyplot as plt
+from settings import modelDict, modelName
 
 
 def compare_models(modelList, fileName = "results.pkl"):
@@ -47,14 +47,12 @@ def load_model_data_trainer(modelName):
 
     return myModel, myData, myTrainer
 
-#TODO test increased maxlengths
-device = set_device.device
+device = settings.device
 torch.set_default_device(device)
-batchSize = 1
-modelName = "Small"
+batchSize = 16 # for higher tensor max_len values, keep batchSize smaller
 myModel, myData, myTrainer = load_model_data_trainer(modelName)
 
-myTrainer.fit(myModel, 0.0001, epochs=5, showTranslations=False, loadModel=False, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = False)
+myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = True)
 
 # myModel.loadDict(modelName)
 # myModel.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
