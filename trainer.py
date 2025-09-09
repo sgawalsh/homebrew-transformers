@@ -4,11 +4,13 @@ import matplotlib.pyplot as plt
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from time import time
 from torch.utils.tensorboard import SummaryWriter
+from data import europarl_data
+from model import Seq2Seq
 
 bleuSuffix, lossSuffix = "bestBleu", "bestLoss"
 
 class trainer:
-    def __init__(self, myData, smoothing = False):
+    def __init__(self, myData: europarl_data, smoothing = False):
 
         self.data = myData
         self.bestLoss = float('inf')
@@ -17,7 +19,7 @@ class trainer:
         self.smoothingFn = SmoothingFunction().method1 if smoothing else None
         self.evalDataloader, self.trainDataloader = None, None
 
-    def fit(self, model, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
+    def fit(self, model: Seq2Seq, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
         self.model = model
         self.model.decoder.predictMode = False
 
@@ -166,7 +168,7 @@ class trainer:
             print(f'{"src:" +  " ".join(src) if src else ""}\npred: {" ".join(pred)}\ntarg: {" ".join(targ)}\n')
 
     def _trim_eos(self, ref, can):
-        eos = self.data.vocab['<eos>']
+        eos = self.data.tokenizer.token_to_id('<eos>')
 
         try:
             ref = ref[:ref.index(eos)]
@@ -212,7 +214,7 @@ class trainer:
                 # with torch.no_grad():
                     loss.backward()
                     self.optim.step()
-                    self.scheduler.step(loss)
+                    # self.scheduler.step(loss)
                     self.optim.zero_grad()
                     
             batchSize = data[0].shape[0]

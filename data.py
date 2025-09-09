@@ -41,13 +41,13 @@ def clean_data(srcFile, tgtFile, outSrcFile, outTgtFile):
         f.writelines(tgtClean)
 
 def create_training_split(ratio = .8):
-    dataset, src_tgt_shared_vocab = create_dataset('europarl-v7.fr-en.clean.en', 'europarl-v7.fr-en.clean.fr')
+    dataset, src_tgt_shared_tokenizer = create_dataset('europarl-v7.fr-en.clean.en', 'europarl-v7.fr-en.clean.fr')
 
     train = dataset[:int(ratio * len(dataset))]
     test = dataset[int(ratio * len(dataset)):]
-    dump_file(train, "train.pkl")
-    dump_file(test, "test.pkl")
-    dump_file(src_tgt_shared_vocab, "src_tgt_shared_vocab.pkl")
+    dump_file(train, "train_bpe.pkl")
+    dump_file(test, "test_bpe.pkl")
+    dump_file(src_tgt_shared_tokenizer, "src_tgt_shared_tokenizer.pkl")
 
 def french_regex(text):
     # 1. Add leading apostrophe space
@@ -71,10 +71,8 @@ def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence lengt
     tokenizer = train_shared_bpe(f'{os.getcwd()}//data//{srcFile}', f'{os.getcwd()}//data//{tgtFile}')
 
     dataList = []
-    sharedVocab = tokenizer.get_vocab()
 
     for srcSentence, tgtSentence in tqdm(dataset):
-
         srcLine = tokenizer.encode(srcSentence.strip().lower()).ids
         tgtLine = tokenizer.encode(tgtSentence.strip().lower()).ids
 
@@ -83,7 +81,7 @@ def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence lengt
         
         dataList.append([srcLine, tgtLine])
 
-    return dataList, sharedVocab
+    return dataList, tokenizer
 
 def set_vocab(vocab):
     sortedKeys = sorted(list(vocab.keys()) + ['<unk>', '<pad>'])
@@ -107,22 +105,21 @@ def dump_file(obj, fileName):
     with open(f'{os.getcwd()}//data//{fileName}', 'wb+') as f:
         pickle.dump(obj, f)
 
-def collate_fn(batch, pad_id=0):
+def collate_fn(batch, pad_id):
     """
     batch: list of (src, tgt) pairs, each a list of token IDs
     """
     src_seqs, tgt_seqs = zip(*batch)
 
     # Find max lengths in this batch
-    src_max_len = max(len(s) for s in src_seqs)
-    tgt_max_len = max(len(t) for t in tgt_seqs)
+    src_valid_lens = torch.tensor([len(s) for s in src_seqs], dtype=torch.long)
+    tgt_valid_lens = torch.tensor([len(t) for t in tgt_seqs], dtype=torch.long)
+    src_max_len = max(src_valid_lens)
+    tgt_max_len = max(tgt_valid_lens)
 
     # Pad sequences
     src_padded = torch.full((len(batch), src_max_len), pad_id, dtype=torch.long)
     tgt_padded = torch.full((len(batch), tgt_max_len), pad_id, dtype=torch.long)
-
-    src_valid_lens = torch.tensor([len(s) for s in src_seqs], dtype=torch.long)
-    tgt_valid_lens = torch.tensor([len(t) for t in tgt_seqs], dtype=torch.long)
 
     for i, (src, tgt) in enumerate(zip(src_seqs, tgt_seqs)):
         src_padded[i, :len(src)] = torch.tensor(src)
@@ -201,9 +198,6 @@ class vocab:
     def to_token(self, el):
         return self.inv_data[el]
     
-    def idx_to_token(self, el):
-        return self.inv_data[el]
-    
     def to_tokens(self, it):
         output = []
 
@@ -226,17 +220,17 @@ class TranslationDataset(torch.utils.data.Dataset):
 class europarl_data:
     def __init__(self):
         
-        with open(f'{os.getcwd()}//data//src_tgt_shared_vocab.pkl', 'rb') as f:
-            self.vocab = pickle.load(f)
+        with open(f'{os.getcwd()}//data//src_tgt_shared_tokenizer.pkl', 'rb') as f:
+            self.tokenizer = pickle.load(f)
 
     def train_dataloader(self):
-        with open(f'{os.getcwd()}//data//train.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//train_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
 
         return self.build_dataloader(data)
 
     def val_dataloader(self):
-        with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//test_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
 
         return self.build_dataloader(data)
@@ -247,7 +241,7 @@ class europarl_data:
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_sampler=sampler,
-            collate_fn=lambda batch: collate_fn(batch, pad_id=self.vocab['<pad>']),
+            collate_fn=lambda batch: collate_fn(batch, pad_id=self.tokenizer.token_to_id('<pad>')),
         )
         return loader
     
@@ -260,10 +254,10 @@ class europarl_data:
 
         for i, linePair in enumerate(tqdm(data, total=dataLength)):
             for j, word in enumerate(linePair[0]):
-                src[i][j] = self.src_vocab[word]
+                src[i][j] = self.vocab[word]
             srcLens[i] = j + 1
             for j, word in enumerate(linePair[1]):
-                tgt[i][j] = self.tgt_vocab[word]
+                tgt[i][j] = self.vocab[word]
             tgtLens[i] = j + 1
             endTarg[i][0 : j] = tgt[i][1 : j + 1] # offset input translations by one for model targets
 
@@ -273,8 +267,7 @@ class europarl_data:
         with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
             data = pickle.load(f)
         random.shuffle(data)
-        return self.to_tensors(data[:n], n, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
+        return self.to_tensors(data[:n], n, self.vocab['<pad>'], self.vocab['<pad>'])
     
     def build(self, src, targ):
-        return self.to_tensors(list(zip([x.split() + ['<eos>'] for x in src], [['<bos>'] + x.split() + ['<eos>'] for x in targ])), self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
-    
+        return self.to_tensors(list(zip([x.split() + ['<eos>'] for x in src], [['<bos>'] + x.split() + ['<eos>'] for x in targ])), self.vocab['<pad>'], self.vocab['<pad>'])

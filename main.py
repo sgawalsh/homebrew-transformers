@@ -39,9 +39,9 @@ def load_model_data_trainer(modelName):
     params = modelDict[modelName]
     myData = data.europarl_data()
 
-    encoder = model.TransformerEncoder(len(myData.vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
-    decoder = model.TransformerDecoder(len(myData.vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
-    myModel = model.Seq2Seq(encoder, decoder, tgt_pad=myData.vocab['<pad>'])
+    encoder = model.TransformerEncoder(myData.tokenizer.get_vocab_size(), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
+    decoder = model.TransformerDecoder(myData.tokenizer.get_vocab_size(), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
+    myModel = model.Seq2Seq(encoder, decoder, tgt_pad=myData.tokenizer.token_to_id('<pad>'))
 
     myTrainer = trainer.trainer(myData)
 
@@ -51,7 +51,7 @@ device = settings.device
 torch.set_default_device(device)
 myModel, myData, myTrainer = load_model_data_trainer(modelName)
 
-myTrainer.fit(myModel, 0.00001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = True)
+myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = True)
 
 # myModel.loadDict(modelName)
 # myModel.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
