@@ -1,7 +1,6 @@
-import pickle, torch, os, random, re, set_device
+import pickle, torch, os, random, re
 from tqdm import tqdm
-from set_device import device
-from settings import maxLen
+from settings import device, maxLen
 
 def create_training_split(ratio = .8):
     dataset, en_vocab, src_max, fr_vocab, tgt_max = create_dataset('europarl-v7.fr-en.en', 'europarl-v7.fr-en.fr')
@@ -130,7 +129,7 @@ class europarl_data:
                 tensors = pickle.load(f)
             self.trainDataLength = len(tensors[0])
         dataset = torch.utils.data.TensorDataset(*tensors)
-        return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle = True, generator = torch.Generator(device=set_device.device))
+        return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle = True, generator = torch.Generator(device=device))
     
     def val_dataloader(self, makeNew = False):
         if makeNew or not os.path.exists(f'{os.getcwd()}//data//test_tensors_{device}.pkl'):
@@ -144,7 +143,7 @@ class europarl_data:
                 tensors = pickle.load(f)
             self.valDataLength = len(tensors[0])
         dataset = torch.utils.data.TensorDataset(*tensors)
-        return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle=False, generator = torch.Generator(device=set_device.device))
+        return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle=False, generator = torch.Generator(device=device))
     
     def to_tensors(self, data, dataLength, srcPadInt, tgtPadInt):
         src = torch.full((dataLength, self.num_steps_src), srcPadInt, dtype=torch.int64)

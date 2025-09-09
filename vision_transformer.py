@@ -1,4 +1,4 @@
-import torch, pickle, pickle, os, set_device
+import torch, pickle, pickle, os, settings
 from model import TransformerEncoderBlock
 from torch import nn
 import numpy as np
@@ -141,7 +141,7 @@ def batchLoop(bLabels, bData, miniBatchLength, model, device, criterion, optim, 
 
 
 def train(miniBatchLength = 128, lr = 0.001, epochs = 10, classTokenMode = False):
-    device = set_device.device
+    device = settings.device
     model = visionTransformer(classTokenMode=classTokenMode).to(device)
     # model = cnnClassifier().to(device) # compare against cnn
     optim = torch.optim.Adam(model.parameters(), lr = lr)

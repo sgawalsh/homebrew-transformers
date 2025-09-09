@@ -1,4 +1,4 @@
-import torch, trainer, os, audio_data, audio_model, set_device, pickle
+import torch, trainer, os, audio_data, audio_model, settings, pickle
     
 
 modelDict = {
@@ -153,7 +153,7 @@ def calcLoss(myData : audio_data.audio_data, myModel: audio_model.TransformerCTC
 
     return totalLoss / i
 
-device = set_device.device
+device = settings.device
 torch.set_default_device(device)
 batch_size = 1
 decodePreds = False
