@@ -41,13 +41,12 @@ class trainer:
                 trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath)
 
         if not self.evalDataloader:
-            print("Generate eval dataloader")
             self.evalDataloader = self.data.val_dataloader()
         if not self.trainDataloader:
-            print("Generate train dataloader")
             self.trainDataloader = self.data.train_dataloader()
         if not loadModel:
-            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, round(self.data.trainDataLength / self.data.batch_size) * schedulerPatience)
+            # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, round(self.data.trainDataLength / self.data.batch_size) * schedulerPatience)
+            pass
 
         for _ in range(epochs):
             self.i += 1
@@ -167,7 +166,7 @@ class trainer:
             print(f'{"src:" +  " ".join(src) if src else ""}\npred: {" ".join(pred)}\ntarg: {" ".join(targ)}\n')
 
     def _trim_eos(self, ref, can):
-        eos = self.data.tgt_vocab['<eos>']
+        eos = self.data.vocab['<eos>']
 
         try:
             ref = ref[:ref.index(eos)]
@@ -183,13 +182,12 @@ class trainer:
         if isEval:
             dataGen = self.evalDataloader if self.evalDataloader else self.data.val_dataloader()
             self.model.eval()
-            dataLength = self.data.valDataLength
         else:
             dataGen = self.trainDataloader if self.trainDataloader else self.data.train_dataloader()
             self.model.train()
-            dataLength = self.data.trainDataLength
-
-        runningLoss, totalBleuScore = 0.0, 0.0
+        
+        dataLength = len(dataGen.dataset)
+        runningLoss, totalBleuScore, processed = 0.0, 0.0, 0
         start = time()
         for i, data in enumerate(dataGen, 1):
 
@@ -211,20 +209,22 @@ class trainer:
                 totalBleuScore += bleuScores / j
 
             if not isEval:
-                with torch.no_grad():
+                # with torch.no_grad():
                     loss.backward()
                     self.optim.step()
                     self.scheduler.step(loss)
                     self.optim.zero_grad()
                     
-            runningLoss += loss.item() * self.data.batch_size
+            batchSize = data[0].shape[0]
+            runningLoss += loss.item() * batchSize
+            processed += batchSize
             try:
-                print(f'{self.i}/{self.epochs} - {i * self.data.batch_size:,}/{dataLength:,} - {100 * i * self.data.batch_size/dataLength:.3f}% - Running Loss: {runningLoss / i:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / i * 100:.2f} - Speed: {(i * self.data.batch_size / (time() - start)):.3f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
+                print(f'{self.i}/{self.epochs} - {processed:,}/{dataLength:,} - {100 * processed/dataLength:.2f}% - Running Loss: {runningLoss / i:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / i * 100:.2f} - Speed: {(processed / (time() - start)):.3f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
             except ZeroDivisionError:
                 pass
 
 
-        return runningLoss / self.data.batch_size / i, totalBleuScore / i
+        return runningLoss / processed, totalBleuScore / i
 
     def _loss(self, Y_hat, Y, averaged=True):
         """Defined in :numref:`sec_softmax_concise`"""

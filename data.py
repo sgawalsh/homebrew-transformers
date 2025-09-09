@@ -1,16 +1,53 @@
-import pickle, torch, os, random, re, set_device
+import pickle, torch, os, random, re, tokenizers, math
 from tqdm import tqdm
-from set_device import device
 from settings import maxLen
 
+def train_shared_bpe(srcFile, tgtFile, vocab_size=32000):
+    with open(srcFile, encoding="utf-8") as f:
+        src_lines = f.readlines()
+    with open(tgtFile, encoding="utf-8") as f:
+        tgt_lines = f.readlines()
+
+    all_texts = src_lines + tgt_lines
+
+    tokenizer = tokenizers.Tokenizer(tokenizers.models.BPE())
+    tokenizer.normalizer = tokenizers.normalizers.Lowercase()
+    tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace()
+    trainer = tokenizers.trainers.BpeTrainer(
+        vocab_size=vocab_size,
+        special_tokens=["<bos>", "<eos>", "<pad>", "<unk>"]
+    )
+    tokenizer.train_from_iterator(all_texts, trainer)
+
+    return tokenizer
+
+def clean_data(srcFile, tgtFile, outSrcFile, outTgtFile):
+    dataset = zip_source_target(srcFile, tgtFile)
+
+    srcClean, tgtClean = [], []
+    for linePair in tqdm(dataset):
+        searchString = linePair[0] + " " + linePair[1]
+        if re.search(r'([.,?!"])(\S)', searchString) or re.search(r'([.,?!]){2,}', searchString) or re.search(r'([()$%&-])', searchString): # skip unusual punctuation
+            continue
+
+        srcClean.append(re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[0]).replace('\n','').strip().lower() + '<eos>\n') # separate trailing puncuation from words
+        # tgtLine = ['<bos>'] + re.sub(r'(\w+)([\'])(\s)', r'\1\2', re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[1])).replace('\n','').strip().lower().split() + ['<eos>'] # and replace apostrophe with trailing space in french
+        tgtClean.append('<bos>'+ french_regex(linePair[1]).replace('\n','').strip().lower() + '<eos>\n')
+    
+    with open(f'{os.getcwd()}//data//{outSrcFile}', 'w', encoding='utf-8') as f:
+        f.writelines(srcClean)
+
+    with open(f'{os.getcwd()}//data//{outTgtFile}', 'w', encoding='utf-8') as f:
+        f.writelines(tgtClean)
+
 def create_training_split(ratio = .8):
-    dataset, en_vocab, src_max, fr_vocab, tgt_max = create_dataset('europarl-v7.fr-en.en', 'europarl-v7.fr-en.fr')
+    dataset, src_tgt_shared_vocab = create_dataset('europarl-v7.fr-en.clean.en', 'europarl-v7.fr-en.clean.fr')
 
     train = dataset[:int(ratio * len(dataset))]
     test = dataset[int(ratio * len(dataset)):]
     dump_file(train, "train.pkl")
     dump_file(test, "test.pkl")
-    dump_file({'src_vocab': en_vocab, 'src_max': src_max, 'tgt_vocab': fr_vocab, 'tgt_max': tgt_max}, "vocabs.pkl")
+    dump_file(src_tgt_shared_vocab, "src_tgt_shared_vocab.pkl")
 
 def french_regex(text):
     # 1. Add leading apostrophe space
@@ -21,39 +58,32 @@ def french_regex(text):
 
     return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
 
-def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence length for source and target data
+def zip_source_target(srcFile, tgtFile):
     with open(f'{os.getcwd()}//data//{srcFile}', mode='rt', encoding='utf-8') as f:
         srcLines = f.readlines()
     with open(f'{os.getcwd()}//data//{tgtFile}', mode='rt', encoding='utf-8') as f:
         tgtLines = f.readlines()
 
-    dataset = list(zip(srcLines, tgtLines))
+    return list(zip(srcLines, tgtLines))
+
+def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence length for source and target data
+    dataset = zip_source_target(srcFile, tgtFile)
+    tokenizer = train_shared_bpe(f'{os.getcwd()}//data//{srcFile}', f'{os.getcwd()}//data//{tgtFile}')
 
     dataList = []
-    srcVocab, tgtVocab, srcMaxLength, tgtMaxLength = dict(), dict(), 0, 0
+    sharedVocab = tokenizer.get_vocab()
 
-    for linePair in tqdm(dataset):
-        searchString = linePair[0] + " " + linePair[1]
-        if re.search(r'([.,?!"])(\S)', searchString) or re.search(r'([.,?!]){2,}', searchString) or re.search(r'([()$%&-])', searchString): # skip unusual punctuation
-            continue
+    for srcSentence, tgtSentence in tqdm(dataset):
 
-        srcLine = re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[0]).replace('\n','').strip().lower().split() + ['<eos>'] # separate trailing puncuation from words
-        # tgtLine = ['<bos>'] + re.sub(r'(\w+)([\'])(\s)', r'\1\2', re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[1])).replace('\n','').strip().lower().split() + ['<eos>'] # and replace apostrophe with trailing space in french
-        tgtLine = ['<bos>'] + french_regex(linePair[1]).replace('\n','').strip().lower().split() + ['<eos>']
+        srcLine = tokenizer.encode(srcSentence.strip().lower()).ids
+        tgtLine = tokenizer.encode(tgtSentence.strip().lower()).ids
 
         if max(len(srcLine), len(tgtLine)) > maxLen:
             continue
-
-        srcMaxLength = max(srcMaxLength, len(srcLine))
-        tgtMaxLength = max(tgtMaxLength, len(tgtLine))
-        for word in srcLine:
-            srcVocab[word] = None
-        for word in tgtLine:
-            tgtVocab[word] = None
         
         dataList.append([srcLine, tgtLine])
 
-    return dataList, set_vocab(srcVocab), srcMaxLength, set_vocab(tgtVocab), tgtMaxLength
+    return dataList, sharedVocab
 
 def set_vocab(vocab):
     sortedKeys = sorted(list(vocab.keys()) + ['<unk>', '<pad>'])
@@ -76,6 +106,83 @@ def fix_vocabs():
 def dump_file(obj, fileName):
     with open(f'{os.getcwd()}//data//{fileName}', 'wb+') as f:
         pickle.dump(obj, f)
+
+def collate_fn(batch, pad_id=0):
+    """
+    batch: list of (src, tgt) pairs, each a list of token IDs
+    """
+    src_seqs, tgt_seqs = zip(*batch)
+
+    # Find max lengths in this batch
+    src_max_len = max(len(s) for s in src_seqs)
+    tgt_max_len = max(len(t) for t in tgt_seqs)
+
+    # Pad sequences
+    src_padded = torch.full((len(batch), src_max_len), pad_id, dtype=torch.long)
+    tgt_padded = torch.full((len(batch), tgt_max_len), pad_id, dtype=torch.long)
+
+    src_valid_lens = torch.tensor([len(s) for s in src_seqs], dtype=torch.long)
+    tgt_valid_lens = torch.tensor([len(t) for t in tgt_seqs], dtype=torch.long)
+
+    for i, (src, tgt) in enumerate(zip(src_seqs, tgt_seqs)):
+        src_padded[i, :len(src)] = torch.tensor(src)
+        tgt_padded[i, :len(tgt)] = torch.tensor(tgt)
+
+    # Shift for teacher forcing
+    tgt_in  = tgt_padded[:, :-1]  # input to decoder
+    tgt_out = tgt_padded[:, 1:]   # expected output
+
+    return src_padded, tgt_in, src_valid_lens, tgt_valid_lens, tgt_out
+
+class BucketedBatchSampler(torch.utils.data.Sampler):
+    """
+    Groups dataset indices by length, shuffles within buckets, and yields batches
+    with roughly `max_tokens` total (src + tgt).
+    """
+
+    def __init__(self, dataset, max_tokens=25000, bucket_size=1000, shuffle=True):
+        self.dataset = dataset
+        self.max_tokens = max_tokens
+        self.bucket_size = bucket_size
+        self.shuffle = shuffle
+
+        # Precompute lengths for sorting/bucketing
+        self.lengths = [len(src) + len(tgt) for src, tgt in dataset]
+
+        # Sort dataset indices by length
+        self.sorted_indices = sorted(range(len(dataset)), key=lambda i: self.lengths[i])
+
+        # Split sorted indices into buckets
+        self.buckets = [
+            self.sorted_indices[i:i + bucket_size]
+            for i in range(0, len(self.sorted_indices), bucket_size)
+        ]
+
+    def __iter__(self):
+        if self.shuffle:
+            random.shuffle(self.buckets)  # shuffle bucket order each epoch
+
+        for bucket in self.buckets:
+            if self.shuffle:
+                random.shuffle(bucket)  # shuffle inside bucket
+
+            batch, batch_tokens = [], 0
+            for idx in bucket:
+                n_tokens = self.lengths[idx]
+                if batch_tokens + n_tokens > self.max_tokens and batch:
+                    yield batch
+                    batch, batch_tokens = [], 0
+
+                batch.append(idx)
+                batch_tokens += n_tokens
+
+            if batch:
+                yield batch
+
+    def __len__(self):
+        # Approximate number of batches per epoch
+        total_tokens = sum(self.lengths)
+        return math.ceil(total_tokens / self.max_tokens)
 
 class vocab:
     def __init__(self, inputDict: dict):
@@ -105,46 +212,44 @@ class vocab:
         
         return output
 
+class TranslationDataset(torch.utils.data.Dataset):
+    def __init__(self, pairs):
+        # pairs: list of (src_ids, tgt_ids)
+        self.pairs = pairs
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, idx):
+        return self.pairs[idx]  # returns (src_ids, tgt_ids)
+
 class europarl_data:
-    def __init__(self, batch_size = 128):
+    def __init__(self):
         
-        with open(f'{os.getcwd()}//data//vocabs.pkl', 'rb') as f:
-            vocabs = pickle.load(f)
+        with open(f'{os.getcwd()}//data//src_tgt_shared_vocab.pkl', 'rb') as f:
+            self.vocab = pickle.load(f)
 
-        self.src_vocab = vocab(vocabs['src_vocab'])
-        self.tgt_vocab = vocab(vocabs['tgt_vocab'])
+    def train_dataloader(self):
+        with open(f'{os.getcwd()}//data//train.pkl', 'rb') as f:
+            data = pickle.load(f)
 
-        self.batch_size = batch_size
-        self.num_steps_src = vocabs['src_max']
-        self.num_steps = vocabs['tgt_max']
+        return self.build_dataloader(data)
 
-    def train_dataloader(self, makeNew = False):
-        if makeNew or not os.path.exists(f'{os.getcwd()}//data//train_tensors_{device}.pkl'):
-            with open(f'{os.getcwd()}//data//train.pkl', 'rb') as f:
-                data = pickle.load(f)
-                self.trainDataLength = len(data)
-                tensors = self.to_tensors(data, self.trainDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
-                dump_file(tensors, f"train_tensors_{device}.pkl")
-        else:
-            with open(f'{os.getcwd()}//data//train_tensors_{device}.pkl', 'rb') as f:
-                tensors = pickle.load(f)
-            self.trainDataLength = len(tensors[0])
-        dataset = torch.utils.data.TensorDataset(*tensors)
-        return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle = True, generator = torch.Generator(device=set_device.device))
+    def val_dataloader(self):
+        with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
+            data = pickle.load(f)
+
+        return self.build_dataloader(data)
     
-    def val_dataloader(self, makeNew = False):
-        if makeNew or not os.path.exists(f'{os.getcwd()}//data//test_tensors_{device}.pkl'):
-            with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
-                data = pickle.load(f)
-                self.valDataLength = len(data)
-                tensors = self.to_tensors(data, self.valDataLength, self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
-                dump_file(tensors, f"test_tensors_{device}.pkl")
-        else:
-            with open(f'{os.getcwd()}//data//test_tensors_{device}.pkl', 'rb') as f:
-                tensors = pickle.load(f)
-            self.valDataLength = len(tensors[0])
-        dataset = torch.utils.data.TensorDataset(*tensors)
-        return torch.utils.data.DataLoader(dataset, self.batch_size, shuffle=False, generator = torch.Generator(device=set_device.device))
+    def build_dataloader(self, data):
+        dataset = TranslationDataset(data)
+        sampler = BucketedBatchSampler(dataset, max_tokens=25000, bucket_size=1000, shuffle=True)
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_sampler=sampler,
+            collate_fn=lambda batch: collate_fn(batch, pad_id=self.vocab['<pad>']),
+        )
+        return loader
     
     def to_tensors(self, data, dataLength, srcPadInt, tgtPadInt):
         src = torch.full((dataLength, self.num_steps_src), srcPadInt, dtype=torch.int64)
@@ -172,3 +277,4 @@ class europarl_data:
     
     def build(self, src, targ):
         return self.to_tensors(list(zip([x.split() + ['<eos>'] for x in src], [['<bos>'] + x.split() + ['<eos>'] for x in targ])), self.src_vocab['<pad>'], self.tgt_vocab['<pad>'])
+    

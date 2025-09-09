@@ -37,11 +37,11 @@ def show_results(fileName = "results.pkl"):
 
 def load_model_data_trainer(modelName):
     params = modelDict[modelName]
-    myData = data.europarl_data(batchSize)
+    myData = data.europarl_data()
 
-    encoder = model.TransformerEncoder(len(myData.src_vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
-    decoder = model.TransformerDecoder(len(myData.tgt_vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
-    myModel = model.Seq2Seq(encoder, decoder, tgt_pad=myData.tgt_vocab['<pad>'])
+    encoder = model.TransformerEncoder(len(myData.vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
+    decoder = model.TransformerDecoder(len(myData.vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
+    myModel = model.Seq2Seq(encoder, decoder, tgt_pad=myData.vocab['<pad>'])
 
     myTrainer = trainer.trainer(myData)
 
@@ -49,10 +49,9 @@ def load_model_data_trainer(modelName):
 
 device = settings.device
 torch.set_default_device(device)
-batchSize = 16 # for higher tensor max_len values, keep batchSize smaller
 myModel, myData, myTrainer = load_model_data_trainer(modelName)
 
-myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = True)
+myTrainer.fit(myModel, 0.00001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = True)
 
 # myModel.loadDict(modelName)
 # myModel.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
