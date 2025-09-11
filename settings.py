@@ -1,7 +1,10 @@
 import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-maxLen = 32
-modelName = "Small"
+
+MAX_LEN = 32 # Maximum tokens per sentence
+MIN_LEN = 4 # Minimum tokens per sentence
+MODEL_NAME = "Small" # Determines model parameters from modelDict in settings.py
+MAX_TOKENS = 3000 # Set lower for larger models or less processing power
 
 modelDict = {
     "Full": {"num_hiddens": 512, "num_blks": 6, "dropout": 0.1, "ffn_num_hiddens": 2048, "num_heads": 8},

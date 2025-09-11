@@ -1,6 +1,6 @@
 import pickle, torch, os, random, re, tokenizers, math
 from tqdm import tqdm
-from settings import maxLen
+from settings import MAX_LEN, MIN_LEN
 
 def train_shared_bpe(srcFile, tgtFile, vocab_size=32000):
     with open(srcFile, encoding="utf-8") as f:
@@ -76,30 +76,12 @@ def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence lengt
         srcLine = tokenizer.encode(srcSentence.strip().lower()).ids
         tgtLine = tokenizer.encode(tgtSentence.strip().lower()).ids
 
-        if max(len(srcLine), len(tgtLine)) > maxLen:
+        if max(len(srcLine), len(tgtLine)) > MAX_LEN or min(len(srcLine), len(tgtLine)) < MIN_LEN: # skip too long or too short sentences
             continue
         
         dataList.append([srcLine, tgtLine])
 
     return dataList, tokenizer
-
-def set_vocab(vocab):
-    sortedKeys = sorted(list(vocab.keys()) + ['<unk>', '<pad>'])
-    print(len(sortedKeys))
-    for i, word in enumerate(sortedKeys):
-        vocab[word] = i
-    return vocab
-
-def fix_vocabs():
-    with open(f'{os.getcwd()}//data//vocabs.pkl', 'rb') as f:
-        vocabs = pickle.load(f)
-    src = vocabs['src_vocab']
-    tgt = vocabs['tgt_vocab']
-
-    src = set_vocab(src)
-    tgt = set_vocab(tgt)
-
-    dump_file({'src_vocab': src, 'src_max': vocabs['src_max'], 'tgt_vocab': tgt, 'tgt_max': vocabs['tgt_max']}, "vocabs.pkl")
 
 def dump_file(obj, fileName):
     with open(f'{os.getcwd()}//data//{fileName}', 'wb+') as f:
@@ -218,10 +200,12 @@ class TranslationDataset(torch.utils.data.Dataset):
         return self.pairs[idx]  # returns (src_ids, tgt_ids)
 
 class europarl_data:
-    def __init__(self):
+    def __init__(self, maxTokens=3000):
         
         with open(f'{os.getcwd()}//data//src_tgt_shared_tokenizer.pkl', 'rb') as f:
             self.tokenizer = pickle.load(f)
+
+        self.max_tokens = maxTokens
 
     def train_dataloader(self):
         with open(f'{os.getcwd()}//data//train_bpe.pkl', 'rb') as f:
@@ -237,7 +221,7 @@ class europarl_data:
     
     def build_dataloader(self, data):
         dataset = TranslationDataset(data)
-        sampler = BucketedBatchSampler(dataset, max_tokens=25000, bucket_size=1000, shuffle=True)
+        sampler = BucketedBatchSampler(dataset, max_tokens=self.max_tokens, bucket_size=1000, shuffle=True)
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_sampler=sampler,
@@ -245,29 +229,7 @@ class europarl_data:
         )
         return loader
     
-    def to_tensors(self, data, dataLength, srcPadInt, tgtPadInt):
-        src = torch.full((dataLength, self.num_steps_src), srcPadInt, dtype=torch.int64)
-        tgt = torch.full((dataLength, self.num_steps), tgtPadInt, dtype=torch.int64)
-        srcLens = torch.empty((dataLength), dtype = torch.int64)
-        tgtLens = torch.empty((dataLength), dtype = torch.int64)
-        endTarg = torch.full((dataLength, self.num_steps), tgtPadInt, dtype=torch.int64)
-
-        for i, linePair in enumerate(tqdm(data, total=dataLength)):
-            for j, word in enumerate(linePair[0]):
-                src[i][j] = self.vocab[word]
-            srcLens[i] = j + 1
-            for j, word in enumerate(linePair[1]):
-                tgt[i][j] = self.vocab[word]
-            tgtLens[i] = j + 1
-            endTarg[i][0 : j] = tgt[i][1 : j + 1] # offset input translations by one for model targets
-
-        return tuple([src, tgt, srcLens, tgtLens, endTarg])
-    
     def get_rand_eval(self, n):
-        with open(f'{os.getcwd()}//data//test.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//test_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
-        random.shuffle(data)
-        return self.to_tensors(data[:n], n, self.vocab['<pad>'], self.vocab['<pad>'])
-    
-    def build(self, src, targ):
-        return self.to_tensors(list(zip([x.split() + ['<eos>'] for x in src], [['<bos>'] + x.split() + ['<eos>'] for x in targ])), self.vocab['<pad>'], self.vocab['<pad>'])
+        return collate_fn(random.sample(data, n), pad_id=self.tokenizer.token_to_id('<pad>'))

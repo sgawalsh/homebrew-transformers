@@ -1,13 +1,5 @@
 import math, torch, inspect, os
 from torch import nn
-    
-def apply_padding_mask(X, valid_lens, value=float('-inf')):
-        shape = X.shape
-        X = X.reshape(-1, shape[-1])
-        mask = torch.arange(1, X.size(1) + 1, dtype=torch.float32, device=X.device)[None, :] > valid_lens[:, None]
-        mask = torch.repeat_interleave(mask, X.size(0) // valid_lens.size(0), dim = 0)
-        X[mask] = value
-        return X.reshape(shape)
 
 class DotProductAttention(nn.Module):
     def __init__(self, dropout):
@@ -148,13 +140,13 @@ class TransformerDecoderBlock(nn.Module):
         self.addnorm3 = AddNorm(num_hiddens, dropout)
 
     def forward(self, X, state):
-        enc_outputs, enc_valid_lens, dec_valid_lens = state[0], state[1], state[3]
+        enc_outputs, enc_valid_lens, dec_valid_lens = state[0], state[1], state[2]
         # During training, all the tokens of any output sequence are processed at the same time, so state[2][self.i] is None as initialized. When decoding any output sequence token by token during prediction, state[2][self.i] contains representations of the decoded output at the i-th block up to the current time step
-        if state[2][self.i] is None:
+        if state[3][self.i] is None:
             key_values = X
         else:
-            key_values = torch.cat((state[2][self.i], X), dim=1) #append preds
-        state[2][self.i] = key_values
+            key_values = torch.cat((state[3][self.i], X), dim=1) #append preds
+        state[3][self.i] = key_values
         # Self-attention
         X2 = self.attention1(X, key_values, key_values, dec_valid_lens, True)
         Y = self.addnorm1(X, X2)
@@ -175,10 +167,9 @@ class TransformerDecoder(nn.Module):
         for i in range(num_blks):
             self.blks.add_module("block"+str(i), TransformerDecoderBlock(num_hiddens, ffn_num_hiddens, num_heads, dropout, i))
         self.dense = nn.LazyLinear(vocab_size)
-        self.predictMode = False
 
     def init_state(self, enc_outputs, enc_valid_lens, dec_valid_lens=None):
-        return [enc_outputs, enc_valid_lens, [None] * self.num_blks, dec_valid_lens]
+        return [enc_outputs, enc_valid_lens, dec_valid_lens, [None] * self.num_blks]
 
     def forward(self, X, state):
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens)) # inputs to embeddings
@@ -240,27 +231,25 @@ class EncoderDecoder(nn.Module):
         # Return decoder output only
         return self.decoder(dec_X, dec_state)[0]
     
-    def my_predict_step(self, src, src_valid_len, bos_pos, tgt_max_len, save_attention_weights=False):
-        self.decoder.predictMode = True
+    def my_predict_step(self, src, src_valid_len, bos_id, tgt_max_len, save_attention_weights=False):
         enc_all_outputs = self.encoder(src, src_valid_len)
         dec_state = self.decoder.init_state(enc_all_outputs, src_valid_len) # [enc_outputs, enc_valid_lens, [None] * self.num_blks] -> [enc_outputs, enc_valid_lens, decoder_block_states]
         attention_weights = []
-        outputs = [torch.full((src.shape[0], 1), bos_pos)] # bos tokens
+        outputs = [torch.full((src.shape[0], 1), bos_id)] # bos tokens
         for _ in range(tgt_max_len):
             Y, dec_state = self.decoder(outputs[-1], dec_state) # latest predictions
             outputs.append(torch.argmax(Y, 2)) # append predictions
             if save_attention_weights:
                 attention_weights.append(self.decoder.attention_weights)
         return torch.concat(outputs[1:], 1), attention_weights
-    
-    def my_beam_search_predict_step(self, src, src_valid_len, bos_pos, tgt_max_len, beam_size=4, length_penalty=0.6):
+
+    def my_beam_search_predict_step(self, src, src_valid_len, bos_id, tgt_max_len, beam_size=4, length_penalty=0.6):
         # Step 1: Encode source
-        self.decoder.predictMode = True
         enc_outputs = self.encoder(src, src_valid_len)
         dec_state = self.decoder.init_state(enc_outputs, src_valid_len)
 
         # Step 2: Initialize beam
-        beams = [([bos_pos], 0.0, dec_state)]  # (tokens, log_prob, state)
+        beams = [([bos_id], 0.0, dec_state)]  # (tokens, log_prob, state)
 
         # Step 3: Main loop -> For all current beams, take n top hypotheses, finally keep top n beams
         for _ in range(tgt_max_len):
@@ -268,7 +257,7 @@ class EncoderDecoder(nn.Module):
 
             for tokens, log_prob, state in beams:
                 if state[2][0] != None:
-                    state = state[:2] + [[layer.detach() for layer in state[2]]]
+                    state = state[:3] + [[layer.detach() for layer in state[2]]]
                 prev_input = torch.tensor(tokens[-1]).reshape(1, 1)
                 Y, new_state = self.decoder(prev_input, state)  # shape: [1, 1, vocab_size]
 
@@ -291,7 +280,7 @@ class EncoderDecoder(nn.Module):
         return torch.tensor(best_tokens[1:]).unsqueeze(0)  # remove BOS
     
     def loadDict(self, modelName: str, suffix: str = '_bestBleu'):
-        checkpointPath = 'checkpoints\\' + modelName + '_state' + suffix + '.pth'
+        checkpointPath = 'checkpoints\\' + modelName + suffix + '.pth'
         if os.path.exists(checkpointPath):
             state = torch.load(checkpointPath)
             self.load_state_dict(state['model_state'])
