@@ -56,8 +56,7 @@ myModel, myData, myTrainer = load_model_data_trainer(MODEL_NAME)
 myModel.loadDict(MODEL_NAME)
 # myTrainer.eval_cycle(myModel, showTranslations=False, calcBleu=True)
 
-decode.greedy_eval(1, myModel, myData)
-# decode.beam_eval(5, myModel, myData)
+# decode.greedy_eval(1, myModel, myData)
 # decode.decoder_eval(myModel, 10)
 
 # compare_models(modelDict.keys())

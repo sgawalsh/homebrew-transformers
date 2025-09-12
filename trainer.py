@@ -2,6 +2,7 @@ import os, torch, datetime
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from nltk.tokenize import word_tokenize
 from time import time
 from torch.utils.tensorboard import SummaryWriter
 from data import europarl_data
@@ -169,9 +170,12 @@ class trainer:
                 self._show_translations(data[0], torch.argmax(Y, 2), data[-1])
             
             if self.calcBleu:
-                decoded_pred = self.data.tokenizer.decode_batch(torch.argmax(Y, 2).tolist(), skip_special_tokens=True)
                 decoded_ref  = self.data.tokenizer.decode_batch(data[-1].tolist(), skip_special_tokens=True)
-                for ref, can in zip(decoded_ref, decoded_pred):
+                decoded_can = self.data.tokenizer.decode_batch(torch.argmax(Y, 2).tolist(), skip_special_tokens=True)
+
+                for ref, can in zip(decoded_ref, decoded_can):
+                    ref = word_tokenize(ref, language="french")
+                    can = word_tokenize(can, language="french")
                     try:
                         totalBleuScore += sentence_bleu([ref], can, weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
                     except KeyError:
