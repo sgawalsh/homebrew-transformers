@@ -15,7 +15,7 @@ class DotProductAttention(nn.Module):
         if valid_lens is not None: # all paths except decoder attention 1 predict path
             # Build a mask initialized as all False
             mask = torch.zeros_like(scores, dtype=torch.bool)
-            if causal: # decoder attention 1 path
+            if causal: # decoder attention 1 train/eval path
                 seq_len = scores.size(-1)
                 causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=scores.device, dtype=torch.bool), diagonal=1)
                 mask |= causal_mask.unsqueeze(0)
@@ -29,7 +29,7 @@ class DotProductAttention(nn.Module):
             scores = scores.masked_fill(mask, float('-inf'))
 
         self.attention_weights = nn.functional.softmax(scores, dim=-1)
-        return torch.bmm(self.dropout(self.attention_weights), values) # plt.imshow(self.attention_weights[0].cpu().detach().numpy(), cmap = 'hot')
+        return torch.bmm(self.dropout(self.attention_weights), values) # plt.imshow(self.attention_weights[0].cpu().detach().numpy(), cmap = 'hot'); plt.show();
 
 class MultiHeadAttention(nn.Module):  
     """Multi-head attention."""
