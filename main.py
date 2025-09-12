@@ -1,5 +1,5 @@
 import torch, trainer, os, model, data, settings, pickle, decode, matplotlib.pyplot as plt
-from settings import modelDict, modelName
+from settings import modelDict, MODEL_NAME, MAX_TOKENS
 
 
 def compare_models(modelList, fileName = "results.pkl"):
@@ -37,11 +37,11 @@ def show_results(fileName = "results.pkl"):
 
 def load_model_data_trainer(modelName):
     params = modelDict[modelName]
-    myData = data.europarl_data(batchSize)
+    myData = data.europarl_data(MAX_TOKENS)
 
-    encoder = model.TransformerEncoder(len(myData.src_vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
-    decoder = model.TransformerDecoder(len(myData.tgt_vocab), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
-    myModel = model.Seq2Seq(encoder, decoder, tgt_pad=myData.tgt_vocab['<pad>'])
+    encoder = model.TransformerEncoder(myData.tokenizer.get_vocab_size(), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
+    decoder = model.TransformerDecoder(myData.tokenizer.get_vocab_size(), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
+    myModel = model.Seq2Seq(encoder, decoder, tgt_pad=myData.tokenizer.token_to_id('<pad>'))
 
     myTrainer = trainer.trainer(myData)
 
@@ -49,18 +49,15 @@ def load_model_data_trainer(modelName):
 
 device = settings.device
 torch.set_default_device(device)
-batchSize = 16 # for higher tensor max_len values, keep batchSize smaller
-myModel, myData, myTrainer = load_model_data_trainer(modelName)
+myModel, myData, myTrainer = load_model_data_trainer(MODEL_NAME)
 
-myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = modelName, calcBleu=True, bleuPriority=True, fromBest = True)
+# myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = MODEL_NAME, calcBleu=True, bleuPriority=True, fromBest = True)
 
-# myModel.loadDict(modelName)
-# myModel.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
-# myTrainer.eval_cycle(myModel, modelName, showTranslations=False, calcBleu=True)
+myModel.loadDict(MODEL_NAME)
+# myTrainer.eval_cycle(myModel, showTranslations=False, calcBleu=True)
 
-# decode.greedy_eval(100, myModel, myData, myTrainer)
-# decode.beam_eval(1, myModel, myData, myTrainer)
-# decode.decoder_eval(myModel, myTrainer, 10)
+# decode.greedy_eval(1, myModel, myData)
+# decode.decoder_eval(myModel, 10)
 
 # compare_models(modelDict.keys())
 # compare_models(["Full", "Small"])

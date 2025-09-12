@@ -2,13 +2,16 @@ import os, torch, datetime
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from nltk.tokenize import word_tokenize
 from time import time
 from torch.utils.tensorboard import SummaryWriter
+from data import europarl_data
+from model import Seq2Seq
 
-bleuSuffix, lossSuffix = "bestBleu", "bestLoss"
+bleuSuffix, lossSuffix = "_bestBleu", "_bestLoss"
 
 class trainer:
-    def __init__(self, myData, smoothing = False):
+    def __init__(self, myData: europarl_data, smoothing = False):
 
         self.data = myData
         self.bestLoss = float('inf')
@@ -17,9 +20,8 @@ class trainer:
         self.smoothingFn = SmoothingFunction().method1 if smoothing else None
         self.evalDataloader, self.trainDataloader = None, None
 
-    def fit(self, model, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
+    def fit(self, model: Seq2Seq, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
         self.model = model
-        self.model.decoder.predictMode = False
 
         self.optim = torch.optim.Adam(self.model.parameters(), lr = lr, betas=(0.9, 0.98), eps=1e-9)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
@@ -32,7 +34,7 @@ class trainer:
         self.epochs = epochs
 
         self.writer = SummaryWriter(log_dir = f'runs/encoderDecoder/{modelName}')
-        checkpointPath = f'checkpoints/{modelName}_state'
+        checkpointPath = f'checkpoints/{modelName}'
         
         if loadModel:
             if fromBest:
@@ -41,23 +43,23 @@ class trainer:
                 trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath)
 
         if not self.evalDataloader:
-            print("Generate eval dataloader")
             self.evalDataloader = self.data.val_dataloader()
         if not self.trainDataloader:
-            print("Generate train dataloader")
             self.trainDataloader = self.data.train_dataloader()
         if not loadModel:
-            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, round(self.data.trainDataLength / self.data.batch_size) * schedulerPatience)
+            # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, round(self.data.trainDataLength / self.data.batch_size) * schedulerPatience)
+            pass
 
         for _ in range(epochs):
             self.i += 1
+            print('Training epoch:')
             cycleLoss, bleuScore = self._train_cycle()
             trainLoss.append(cycleLoss)
             trainBleu.append(bleuScore)
             self.writer.add_scalar('Loss/Train', cycleLoss, self.i)
             self.writer.add_scalar('BLEU/Train', bleuScore, self.i)
-            print('Done training')
-
+            
+            print('Eval epoch:')
             cycleLoss, bleuScore = self._train_cycle(True)
             evalLoss.append(cycleLoss)
             evalBleu.append(bleuScore)
@@ -70,8 +72,6 @@ class trainer:
             if cycleLoss < self.bestLoss:
                 self.bestLoss = cycleLoss
                 self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = lossSuffix)
-
-            print('Done eval')
 
             # save checkpoint
             self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath)
@@ -133,13 +133,8 @@ class trainer:
         else:
             raise FileNotFoundError("No checkpoint found")
 
-    def eval_cycle(self, model, modelName, showTranslations = True, calcBleu = True):
+    def eval_cycle(self, model, showTranslations = True, calcBleu = True):
         self.model = model
-        self.model.decoder.predictMode = False
-        try:
-            self.model.load_state_dict(torch.load(f'{os.getcwd()}//models//{modelName}'))
-        except FileNotFoundError:
-            print("No file available to be loaded")
 
         self.i, self.epochs = 1, 1
         self.showTranslations = showTranslations
@@ -147,49 +142,24 @@ class trainer:
 
         return self._train_cycle(True)
 
-    def _show_translations(self, inSrc, inPred, inTarg):
-        for srcLine, predLine, targLine in zip(inSrc, inPred, inTarg):
-            src, pred, targ = [], [], []
-            if hasattr(self.data, 'src_vocab'):
-                for token in srcLine:
-                    if token == self.data.src_vocab['<eos>']:
-                        break
-                    src.append(self.data.src_vocab.to_token(token.item()))
-            for token in predLine:
-                if token == self.data.tgt_vocab['<eos>']:
-                    break
-                pred.append(self.data.tgt_vocab.to_token(token.item()))
-            for token in targLine:
-                if token == self.data.tgt_vocab['<eos>']:
-                    break
-                targ.append(self.data.tgt_vocab.to_token(token.item()))
+    def _show_translations(self, inSrc, inTarg, inPred):
+        src = self.data.tokenizer.decode_batch(inSrc, skip_special_tokens=True)
+        tgt = self.data.tokenizer.decode_batch(inTarg, skip_special_tokens=True)
+        pred = self.data.tokenizer.decode_batch(inPred, skip_special_tokens=True)
 
-            print(f'{"src:" +  " ".join(src) if src else ""}\npred: {" ".join(pred)}\ntarg: {" ".join(targ)}\n')
-
-    def _trim_eos(self, ref, can):
-        eos = self.data.tgt_vocab['<eos>']
-
-        try:
-            ref = ref[:ref.index(eos)]
-        except ValueError:
-            pass
-        try:
-            can = can[:can.index(eos)]
-        except ValueError:
-            pass
-        return ref, can
+        for s, t, p in zip(src, tgt, pred):
+            print(f'{" ".join(s)} => {" ".join(t)} => {" ".join(p)}')
 
     def _train_cycle(self, isEval = False):
         if isEval:
             dataGen = self.evalDataloader if self.evalDataloader else self.data.val_dataloader()
             self.model.eval()
-            dataLength = self.data.valDataLength
         else:
             dataGen = self.trainDataloader if self.trainDataloader else self.data.train_dataloader()
             self.model.train()
-            dataLength = self.data.trainDataLength
-
-        runningLoss, totalBleuScore = 0.0, 0.0
+        
+        dataLength = len(dataGen.dataset)
+        runningLoss, totalBleuScore, processed = 0.0, 0.0, 0
         start = time()
         for i, data in enumerate(dataGen, 1):
 
@@ -200,31 +170,35 @@ class trainer:
                 self._show_translations(data[0], torch.argmax(Y, 2), data[-1])
             
             if self.calcBleu:
-                bleuScores = 0.0
-                for j, (ref, can) in enumerate(zip(data[-1].tolist(), torch.argmax(Y, 2).tolist()), 1):
-                    ref, can = self._trim_eos(ref, can)
+                decoded_ref  = self.data.tokenizer.decode_batch(data[-1].tolist(), skip_special_tokens=True)
+                decoded_can = self.data.tokenizer.decode_batch(torch.argmax(Y, 2).tolist(), skip_special_tokens=True)
+
+                for ref, can in zip(decoded_ref, decoded_can):
+                    ref = word_tokenize(ref, language="french")
+                    can = word_tokenize(can, language="french")
                     try:
-                        bleuScores += sentence_bleu([ref], can, weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
+                        totalBleuScore += sentence_bleu([ref], can, weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
                     except KeyError:
                         pass
-                
-                totalBleuScore += bleuScores / j
+
 
             if not isEval:
-                with torch.no_grad():
+                # with torch.no_grad():
                     loss.backward()
                     self.optim.step()
-                    self.scheduler.step(loss)
+                    # self.scheduler.step(loss)
                     self.optim.zero_grad()
                     
-            runningLoss += loss.item() * self.data.batch_size
+            batchSize = data[0].shape[0]
+            runningLoss += loss.item() * batchSize
+            processed += batchSize
             try:
-                print(f'{self.i}/{self.epochs} - {i * self.data.batch_size:,}/{dataLength:,} - {100 * i * self.data.batch_size/dataLength:.3f}% - Running Loss: {runningLoss / i:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / i * 100:.2f} - Speed: {(i * self.data.batch_size / (time() - start)):.3f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
+                print(f'{self.i}/{self.epochs} - {processed:,}/{dataLength:,} - {100 * processed/dataLength:.2f}% - Running Loss: {runningLoss / processed:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / processed * 100:.2f} - Speed: {(processed / (time() - start)):.3f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
             except ZeroDivisionError:
                 pass
 
-
-        return runningLoss / self.data.batch_size / i, totalBleuScore / i
+        print()
+        return runningLoss / processed, totalBleuScore / i
 
     def _loss(self, Y_hat, Y, averaged=True):
         """Defined in :numref:`sec_softmax_concise`"""
