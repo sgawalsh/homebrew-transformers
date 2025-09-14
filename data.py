@@ -12,7 +12,7 @@ def train_shared_bpe(srcFile, tgtFile, vocab_size=32000):
 
     tokenizer = tokenizers.Tokenizer(tokenizers.models.BPE())
     tokenizer.normalizer = tokenizers.normalizers.Lowercase()
-    tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace()
+    tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Metaspace()
     trainer = tokenizers.trainers.BpeTrainer(
         vocab_size=vocab_size,
         special_tokens=["<bos>", "<eos>", "<pad>", "<unk>"]
@@ -232,4 +232,5 @@ class europarl_data:
     def get_rand_eval(self, n):
         with open(f'{os.getcwd()}//data//test_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
+        random.seed(0)
         return collate_fn(random.sample(data, n), pad_id=self.tokenizer.token_to_id('<pad>'))

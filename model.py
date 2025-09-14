@@ -256,8 +256,8 @@ class EncoderDecoder(nn.Module):
             new_beams = []
 
             for tokens, log_prob, state in beams:
-                if state[2][0] != None:
-                    state = state[:3] + [[layer.detach() for layer in state[2]]]
+                if state[3][0] != None:
+                    state = state[:3] + [[layer.detach() for layer in state[3]]]
                 prev_input = torch.tensor(tokens[-1]).reshape(1, 1)
                 Y, new_state = self.decoder(prev_input, state)  # shape: [1, 1, vocab_size]
 
