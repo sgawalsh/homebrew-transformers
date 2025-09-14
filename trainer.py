@@ -20,7 +20,7 @@ class trainer:
         self.smoothingFn = SmoothingFunction().method1 if smoothing else None
         self.evalDataloader, self.trainDataloader = None, None
 
-    def fit(self, model: Seq2Seq, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 5):
+    def fit(self, model: Seq2Seq, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 2):
         self.model = model
 
         self.optim = torch.optim.Adam(self.model.parameters(), lr = lr, betas=(0.9, 0.98), eps=1e-9)
@@ -47,8 +47,7 @@ class trainer:
         if not self.trainDataloader:
             self.trainDataloader = self.data.train_dataloader()
         if not loadModel:
-            # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, round(self.data.trainDataLength / self.data.batch_size) * schedulerPatience)
-            pass
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .8, schedulerPatience)
 
         for _ in range(epochs):
             self.i += 1
@@ -161,7 +160,7 @@ class trainer:
         dataLength = len(dataGen.dataset)
         runningLoss, totalBleuScore, processed = 0.0, 0.0, 0
         start = time()
-        for i, data in enumerate(dataGen, 1):
+        for data in dataGen:
 
             Y = self.model(*data[:-1]) # (srcTensor, tgtTensor(t), srcValidLens, tgtValidLens)
             loss = self._loss(Y, data[-1]) # (tgtTensor(t+1))
@@ -181,12 +180,10 @@ class trainer:
                     except KeyError:
                         pass
 
-
             if not isEval:
-                # with torch.no_grad():
+                with torch.no_grad():
                     loss.backward()
                     self.optim.step()
-                    # self.scheduler.step(loss)
                     self.optim.zero_grad()
                     
             batchSize = data[0].shape[0]
@@ -198,7 +195,9 @@ class trainer:
                 pass
 
         print()
-        return runningLoss / processed, totalBleuScore / i
+        if isEval:
+            self.scheduler.step(runningLoss)
+        return runningLoss / processed, totalBleuScore / processed * 100 if self.calcBleu else 0.0
 
     def _loss(self, Y_hat, Y, averaged=True):
         """Defined in :numref:`sec_softmax_concise`"""
