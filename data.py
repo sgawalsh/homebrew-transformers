@@ -3,21 +3,12 @@ from tqdm import tqdm
 from settings import MAX_LEN, MIN_LEN
 
 def train_shared_bpe(srcFile, tgtFile, vocab_size=32000):
-    with open(srcFile, encoding="utf-8") as f:
-        src_lines = f.readlines()
-    with open(tgtFile, encoding="utf-8") as f:
-        tgt_lines = f.readlines()
-
-    all_texts = src_lines + tgt_lines
-
-    tokenizer = tokenizers.Tokenizer(tokenizers.models.BPE())
-    tokenizer.normalizer = tokenizers.normalizers.Lowercase()
-    tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Metaspace()
-    trainer = tokenizers.trainers.BpeTrainer(
-        vocab_size=vocab_size,
-        special_tokens=["<bos>", "<eos>", "<pad>", "<unk>"]
+    tokenizer = tokenizers.SentencePieceBPETokenizer()
+    tokenizer.train(
+        files=[srcFile, tgtFile],
+        vocab_size=32000,
+        special_tokens=["<pad>", "<unk>", "<bos>", "<eos>"]
     )
-    tokenizer.train_from_iterator(all_texts, trainer)
 
     return tokenizer
 
@@ -47,7 +38,7 @@ def create_training_split(ratio = .8):
     test = dataset[int(ratio * len(dataset)):]
     dump_file(train, "train_bpe.pkl")
     dump_file(test, "test_bpe.pkl")
-    dump_file(src_tgt_shared_tokenizer, "src_tgt_shared_tokenizer.pkl")
+    src_tgt_shared_tokenizer.save("data//src_tgt_shared_tokenizer.json")
 
 def french_regex(text):
     # 1. Add leading apostrophe space
@@ -66,7 +57,7 @@ def zip_source_target(srcFile, tgtFile):
 
     return list(zip(srcLines, tgtLines))
 
-def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence length for source and target data
+def create_dataset(srcFile, tgtFile):
     dataset = zip_source_target(srcFile, tgtFile)
     tokenizer = train_shared_bpe(f'{os.getcwd()}//data//{srcFile}', f'{os.getcwd()}//data//{tgtFile}')
 
@@ -76,7 +67,7 @@ def create_dataset(srcFile, tgtFile): # maxLen determines maximum sentence lengt
         srcLine = tokenizer.encode(srcSentence.strip().lower()).ids
         tgtLine = tokenizer.encode(tgtSentence.strip().lower()).ids
 
-        if max(len(srcLine), len(tgtLine)) > MAX_LEN or min(len(srcLine), len(tgtLine)) < MIN_LEN: # skip too long or too short sentences
+        if max(len(srcLine), len(tgtLine)) > MAX_LEN or min(len(srcLine), len(tgtLine)) < MIN_LEN: # skip sentences that are too long or too short
             continue
         
         dataList.append([srcLine, tgtLine])
@@ -201,9 +192,7 @@ class TranslationDataset(torch.utils.data.Dataset):
 
 class europarl_data:
     def __init__(self, maxTokens=3000):
-        
-        with open(f'{os.getcwd()}//data//src_tgt_shared_tokenizer.pkl', 'rb') as f:
-            self.tokenizer = pickle.load(f)
+        self.tokenizer = tokenizers.Tokenizer.from_file("data//src_tgt_shared_tokenizer.json")
 
         self.max_tokens = maxTokens
 

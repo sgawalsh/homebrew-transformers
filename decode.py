@@ -34,7 +34,7 @@ def print_bleu(refs, preds, tokenizer: Tokenizer, smoothing = False):
 
     for ref, can in zip(decoded_ref, decoded_pred):
         try:
-            bleuScore += sentence_bleu([ref], can, weights=bleuWeights[min(4, len(can))], smoothing_function=SmoothingFunction().method1 if smoothing else None)
+            bleuScore += sentence_bleu([ref.split()], can.split(), weights=bleuWeights[min(4, len(can))], smoothing_function=SmoothingFunction().method1 if smoothing else None)
         except KeyError:
             pass
 
