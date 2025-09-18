@@ -12,17 +12,7 @@ def greedy_eval(n: int, myModel: model.EncoderDecoder, myData: data.europarl_dat
     print_results(input[0].tolist(), input[-1].tolist(), preds.tolist(), myData.tokenizer)
     print_bleu(input[-1].tolist(), preds.tolist(), myData.tokenizer)
 
-def beam_eval(n: int, myModel: model.EncoderDecoder, myData: data.europarl_data):
-    myModel.eval()
-    inputs = myData.get_rand_eval(n)
-    preds = []
-    for input in zip(inputs[0], inputs[2]):
-        pred = myModel.my_beam_search_predict_step(torch.unsqueeze(input[0], 0), torch.unsqueeze(input[1], 0), myData.tokenizer.token_to_id('<bos>'), MAX_LEN)
-        preds.append(torch.squeeze(pred).tolist())
-
-    print_results(inputs[0].tolist(), inputs[-1].tolist(), preds, myData.tokenizer)
-
-def decoder_eval(myModel: model.EncoderDecoder, n: int):
+def beam_eval(myModel: model.EncoderDecoder, n: int):
     myModel.eval()
     myData = data.europarl_data()
     eval_dataloader = list(zip(*myData.get_rand_eval(n)))
@@ -36,7 +26,7 @@ def decoder_eval(myModel: model.EncoderDecoder, n: int):
     print_results(srcList, refList, canList, myData.tokenizer)
     print_bleu(refList, canList, myData.tokenizer)
 
-def print_bleu(refs, preds, tokenizer: Tokenizer, smoothing = True):
+def print_bleu(refs, preds, tokenizer: Tokenizer, smoothing = False):
     bleuWeights = {1: (1, 0, 0, 0), 2: (.5, .5, 0, 0), 3: (.33, .33, .33, 0), 4: (.25, .25, .25, .25)}
     bleuScore = 0.0
     decoded_pred = tokenizer.decode_batch(preds, skip_special_tokens=True)
@@ -48,12 +38,12 @@ def print_bleu(refs, preds, tokenizer: Tokenizer, smoothing = True):
         except KeyError:
             pass
 
-    print(f'Bleu Score: {bleuScore/len(decoded_pred):.3f}')
+    print(f'Bleu Score: {bleuScore * 100 / len(decoded_pred):.3f}')
 
 def print_results(source, target, predictions, tokenizer: Tokenizer):
-    src = tokenizer.decode_batch(source, skip_special_tokens=True)
-    tgt = tokenizer.decode_batch(target, skip_special_tokens=True)
-    pred = tokenizer.decode_batch(predictions, skip_special_tokens=True)
+    src = tokenizer.decode_batch(source)
+    tgt = tokenizer.decode_batch(target)
+    pred = tokenizer.decode_batch(predictions)
 
     for s, t, p in zip(src, tgt, pred):
-        print(f'{s} => {t} => {p}')
+        print(f'{s}\n{t}\n{p}\n')

@@ -168,15 +168,13 @@ class trainer:
             if self.showTranslations:
                 self._show_translations(data[0], torch.argmax(Y, 2), data[-1])
             
-            if self.calcBleu:
+            if self.calcBleu: # subword level bleu score
                 decoded_ref  = self.data.tokenizer.decode_batch(data[-1].tolist(), skip_special_tokens=True)
                 decoded_can = self.data.tokenizer.decode_batch(torch.argmax(Y, 2).tolist(), skip_special_tokens=True)
 
                 for ref, can in zip(decoded_ref, decoded_can):
-                    ref = word_tokenize(ref, language="french")
-                    can = word_tokenize(can, language="french")
                     try:
-                        totalBleuScore += sentence_bleu([ref], can, weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
+                        totalBleuScore += sentence_bleu([word_tokenize(ref, language="french")], word_tokenize(can, language="french"), weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
                     except KeyError:
                         pass
 
