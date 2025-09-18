@@ -1,19 +1,16 @@
 name: transformers
 channels:
-  - pytorch
-  - conda-forge
   - defaults
 dependencies:
   - python=3.11
+  - torchvision
+  - pytorch-cuda=12.1
   - tqdm
   - librosa
-  - numpy
+  - torchaudio
+  - pytorch
   - pysoundfile
   - nltk
-  - matplotlib
-  - torchvision
-  - pytorch
-  - torchaudio
-  - pytorch-cuda
-  - tensorboard
-  - tokenizers
+  - conda-forge::tensorboard
+  - conda-forge::tokenizers
+  - conda-forge::matplotlib
