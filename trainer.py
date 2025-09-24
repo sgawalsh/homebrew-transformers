@@ -37,7 +37,7 @@ class trainer:
         
         if loadModel:
             if fromBest:
-                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath + bleuSuffix if bleuPriority else lossSuffix)
+                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath + (bleuSuffix if bleuPriority else lossSuffix))
             else:
                 trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath)
 
