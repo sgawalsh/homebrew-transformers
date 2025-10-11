@@ -1,53 +1,16 @@
 import pickle, torch, os, random, re, tokenizers, math
 from tqdm import tqdm
-from settings import MAX_LEN, MIN_LEN
+from settings import MAX_LEN, MIN_LEN, SRC_LANG, TRG_LANG, DATA_MODE, dataFileDict
 
-def train_shared_bpe(srcFile, tgtFile, vocab_size=32000):
+def train_shared_bpe(fileList, vocab_size=32000):
     tokenizer = tokenizers.SentencePieceBPETokenizer()
     tokenizer.train(
-        files=[srcFile, tgtFile],
-        vocab_size=32000,
-        special_tokens=["<pad>", "<unk>", "<bos>", "<eos>"]
+        files=fileList,
+        vocab_size=vocab_size,
+        special_tokens=["<pad>", "<unk>", "<bos>", "<eos>"],
     )
 
     return tokenizer
-
-def clean_data(srcFile, tgtFile, outSrcFile, outTgtFile):
-    dataset = zip_source_target(srcFile, tgtFile)
-
-    srcClean, tgtClean = [], []
-    for linePair in tqdm(dataset):
-        searchString = linePair[0] + " " + linePair[1]
-        if re.search(r'([.,?!"])(\S)', searchString) or re.search(r'([.,?!]){2,}', searchString) or re.search(r'([()$%&-])', searchString): # skip unusual punctuation
-            continue
-
-        srcClean.append(re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[0]).replace('\n','').strip().lower() + '<eos>\n') # separate trailing puncuation from words
-        # tgtLine = ['<bos>'] + re.sub(r'(\w+)([\'])(\s)', r'\1\2', re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[1])).replace('\n','').strip().lower().split() + ['<eos>'] # and replace apostrophe with trailing space in french
-        tgtClean.append('<bos>'+ french_regex(linePair[1]).replace('\n','').strip().lower() + '<eos>\n')
-    
-    with open(f'{os.getcwd()}//data//{outSrcFile}', 'w', encoding='utf-8') as f:
-        f.writelines(srcClean)
-
-    with open(f'{os.getcwd()}//data//{outTgtFile}', 'w', encoding='utf-8') as f:
-        f.writelines(tgtClean)
-
-def create_training_split(ratio = .8):
-    dataset, src_tgt_shared_tokenizer = create_dataset('europarl-v7.fr-en.clean.en', 'europarl-v7.fr-en.clean.fr')
-
-    train = dataset[:int(ratio * len(dataset))]
-    test = dataset[int(ratio * len(dataset)):]
-    dump_file(train, "train_bpe.pkl")
-    dump_file(test, "test_bpe.pkl")
-    src_tgt_shared_tokenizer.save("data//src_tgt_shared_tokenizer.json")
-
-def french_regex(text):
-    # 1. Add leading apostrophe space
-    text = re.sub(r"(\w)'", r"\1 '", text)
-
-    # 2. Add trailing apostrophe space
-    text = re.sub(r"'(\w)", r"' \1", text)
-
-    return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
 
 def zip_source_target(srcFile, tgtFile):
     with open(f'{os.getcwd()}//data//{srcFile}', mode='rt', encoding='utf-8') as f:
@@ -57,22 +20,73 @@ def zip_source_target(srcFile, tgtFile):
 
     return list(zip(srcLines, tgtLines))
 
-def create_dataset(srcFile, tgtFile):
+def clean_data(srcFile, tgtFile, outSrcFile, outTgtFile):
     dataset = zip_source_target(srcFile, tgtFile)
-    tokenizer = train_shared_bpe(f'{os.getcwd()}//data//{srcFile}', f'{os.getcwd()}//data//{tgtFile}')
 
+    with open(f'{os.getcwd()}//data//{outSrcFile}', 'w', encoding='utf-8') as fSrc, open(f'{os.getcwd()}//data//{outTgtFile}', 'w', encoding='utf-8') as fTrg:
+        for linePair in tqdm(dataset):
+            searchString = linePair[0] + " " + linePair[1]
+            if re.search(r'([.,?!"])(\S)', searchString) or re.search(r'([.,?!]){2,}', searchString) or re.search(r'([()$%&-])', searchString): # skip unusual punctuation
+                continue
+
+            fSrc.write(re.sub(r'(\w+)([.,?!])', r'\1 \2', linePair[0]).replace('\n','').strip().lower() + '\n') # separate trailing puncuation from words
+            fTrg.write(french_regex(linePair[1]).replace('\n','').strip().lower() + '\n')
+
+def create_dataset(srcFile, tgtFile):
+    tokenizer = train_shared_bpe([f'{os.getcwd()}//data//{srcFile}', f'{os.getcwd()}//data//{tgtFile}'])
+    dataset = zip_source_target(srcFile, tgtFile)
+
+    dataList = encode_dataset(dataset, tokenizer)
+
+    return dataList, tokenizer
+
+def encode_dataset(dataset, tokenizer: tokenizers.Tokenizer):
     dataList = []
 
-    for srcSentence, tgtSentence in tqdm(dataset):
-        srcLine = tokenizer.encode(srcSentence.strip().lower()).ids
-        tgtLine = tokenizer.encode(tgtSentence.strip().lower()).ids
+    for i, (srcSentence, tgtSentence) in tqdm(enumerate(dataset)):
+        srcLine = tokenizer.encode(srcSentence.strip().lower() + '<eos>').ids
+        tgtLine = tokenizer.encode('<bos>' + tgtSentence.strip().lower() + '<eos>').ids
 
         if max(len(srcLine), len(tgtLine)) > MAX_LEN or min(len(srcLine), len(tgtLine)) < MIN_LEN: # skip sentences that are too long or too short
             continue
         
-        dataList.append([srcLine, tgtLine])
+        dataList.append([i, srcLine, tgtLine])
 
-    return dataList, tokenizer
+    return dataList
+
+def create_training_split_europarl(evalNum=1500, randomSeed=0, shuffle = True):
+    srcFile = dataFileDict[DATA_MODE]["src"]
+    tgtFile = dataFileDict[DATA_MODE]["tgt"]
+    dataset, src_tgt_shared_tokenizer = create_dataset(srcFile, tgtFile)
+    if shuffle:
+        if randomSeed is not None:
+            random.seed(randomSeed)
+        random.shuffle(dataset)
+    train = dataset[:-evalNum]
+    test = dataset[-evalNum:]
+    dump_file(train, f"train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    dump_file(test, f"test_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    src_tgt_shared_tokenizer.save(f"data//{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
+
+def create_training_split_wmt():
+    srcFile = dataFileDict[DATA_MODE]["src_train"]
+    tgtFile = dataFileDict[DATA_MODE]["tgt_train"]
+    trainDataset, src_tgt_shared_tokenizer = create_dataset(srcFile, tgtFile)
+    testDataset = zip_source_target(dataFileDict[DATA_MODE]["src_test"], dataFileDict[DATA_MODE]["tgt_test"])
+    testDataset = encode_dataset(testDataset, src_tgt_shared_tokenizer)
+
+    dump_file(trainDataset, f"train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    dump_file(testDataset, f"test_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    src_tgt_shared_tokenizer.save(f"data//{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
+
+def french_regex(text):
+    # 1. Add leading apostrophe space
+    text = re.sub(r"(\w)'", r"\1 '", text)
+
+    # 2. Add trailing apostrophe space
+    text = re.sub(r"'(\w)", r"' \1", text)
+
+    return re.sub(r'(\w+)([.,?!])', r'\1 \2', text) # separate trailing punctuation from words
 
 def dump_file(obj, fileName):
     with open(f'{os.getcwd()}//data//{fileName}', 'wb+') as f:
@@ -191,26 +205,26 @@ class TranslationDataset(torch.utils.data.Dataset):
         return self.pairs[idx]  # returns (src_ids, tgt_ids)
 
 class europarl_data:
-    def __init__(self, maxTokens=3000):
-        self.tokenizer = tokenizers.Tokenizer.from_file("data//src_tgt_shared_tokenizer.json")
+    def __init__(self, maxTokens=2000):
+        self.tokenizer = tokenizers.Tokenizer.from_file(f"data//{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
 
         self.max_tokens = maxTokens
 
     def train_dataloader(self):
-        with open(f'{os.getcwd()}//data//train_bpe.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//train_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
 
         return self.build_dataloader(data)
 
     def val_dataloader(self):
-        with open(f'{os.getcwd()}//data//test_bpe.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//test_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
 
-        return self.build_dataloader(data)
+        return self.build_dataloader(data, False)
     
-    def build_dataloader(self, data):
+    def build_dataloader(self, data, shuffleData = True):
         dataset = TranslationDataset(data)
-        sampler = BucketedBatchSampler(dataset, max_tokens=self.max_tokens, bucket_size=1000, shuffle=True)
+        sampler = BucketedBatchSampler(dataset, max_tokens=self.max_tokens, bucket_size=1000, shuffle=shuffleData)
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_sampler=sampler,
@@ -218,8 +232,10 @@ class europarl_data:
         )
         return loader
     
-    def get_rand_eval(self, n):
-        with open(f'{os.getcwd()}//data//test_bpe.pkl', 'rb') as f:
+    def get_rand_sample(self, n, isEval=True):
+        with open(f'{os.getcwd()}//data//{"test" if isEval else "train"}_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
-        random.seed(0)
         return collate_fn(random.sample(data, n), pad_id=self.tokenizer.token_to_id('<pad>'))
+    
+# clean_data("europarl-v7.fr-en.en", "europarl-v7.fr-en.fr", "europarl-v7.fr-en.clean.en", "europarl-v7.fr-en.clean.fr")
+# create_training_split_europarl()
