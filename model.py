@@ -1,5 +1,6 @@
 import math, torch, inspect, os
 from torch import nn
+from settings import MAX_LEN
 
 class DotProductAttention(nn.Module):
     def __init__(self, dropout):
@@ -92,19 +93,30 @@ class SimpleMultiHeadAttention(nn.Module):
         # Shape of output_concat: (batch_size, no. of queries, num_hiddens)
         return self.W_o(output)
 
-class PositionalEncoding(nn.Module):  
-    """Positional encoding."""
-    def __init__(self, num_hiddens, dropout, max_len=512):
+class PositionalEncoding(nn.Module):
+    def __init__(self, num_hiddens, dropout, max_len=10000):  # large default
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        # Create a long enough P
-        self.P = torch.zeros((1, max_len, num_hiddens))
-        X = torch.arange(max_len, dtype=torch.float32).reshape(-1, 1) / torch.pow(10000, torch.arange(0, num_hiddens, 2, dtype=torch.float32) / num_hiddens)
-        self.P[:, :, 0::2] = torch.sin(X)
-        self.P[:, :, 1::2] = torch.cos(X)
+        self.num_hiddens = num_hiddens
+        self.max_len = max_len
+
+        # Precompute up to max_len but can be extended
+        self.P = self._build_encoding(max_len, num_hiddens)
+
+    def _build_encoding(self, max_len, num_hiddens):
+        P = torch.zeros((1, max_len, num_hiddens))
+        position = torch.arange(max_len, dtype=torch.float32).reshape(-1, 1)
+        div_term = torch.pow(10000, torch.arange(0, num_hiddens, 2, dtype=torch.float32) / num_hiddens)
+        P[:, :, 0::2] = torch.sin(position / div_term)
+        P[:, :, 1::2] = torch.cos(position / div_term)
+        return P
 
     def forward(self, X):
-        return self.dropout(X + self.P[:, :X.shape[1], :].to(X.device)) # plt.imshow(self.P[:, :X.shape[1], :].squeeze().cpu().detach().numpy(), cmap = 'hot')
+        seq_len = X.shape[1]
+        if seq_len > self.P.shape[1]:
+            # extend encoding if needed
+            self.P = self._build_encoding(seq_len * 2, self.num_hiddens).to(X.device)
+        return self.dropout(X + self.P[:, :seq_len, :].to(X.device)) # plt.imshow(self.P[:, :X.shape[1], :].squeeze().cpu().detach().numpy(), cmap = 'hot')
 
 class PositionWiseFFN(nn.Module):  
     """The positionwise feed-forward network."""
@@ -162,7 +174,7 @@ class TransformerDecoder(nn.Module):
         self.num_hiddens = num_hiddens
         self.num_blks = num_blks
         self.embedding = nn.Embedding(vocab_size, num_hiddens)
-        self.pos_encoding = PositionalEncoding(num_hiddens, dropout)
+        self.pos_encoding = PositionalEncoding(num_hiddens, dropout, max_len=MAX_LEN)
         self.blks = nn.Sequential()
         for i in range(num_blks):
             self.blks.add_module("block"+str(i), TransformerDecoderBlock(num_hiddens, ffn_num_hiddens, num_heads, dropout, i))
@@ -204,7 +216,7 @@ class TransformerEncoder(nn.Module):
         super().__init__()
         self.num_hiddens = num_hiddens
         self.embedding = nn.Embedding(vocab_size, num_hiddens)
-        self.pos_encoding = PositionalEncoding(num_hiddens, dropout)
+        self.pos_encoding = PositionalEncoding(num_hiddens, dropout, max_len=MAX_LEN)
         self.blks = nn.Sequential()
         for i in range(num_blks):
             self.blks.add_module("block"+str(i), TransformerEncoderBlock(num_hiddens, ffn_num_hiddens, num_heads, dropout, use_bias))
