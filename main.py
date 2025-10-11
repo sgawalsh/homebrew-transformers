@@ -1,42 +1,12 @@
-import torch, trainer, os, model, data, settings, pickle, decode, matplotlib.pyplot as plt
-from settings import modelDict, MODEL_NAME, MAX_TOKENS
+import torch, trainer, model, data, settings, decode, os, logging
+from settings import modelDict, MODEL_PARAMS, MAX_TOKENS, SRC_LANG, TRG_LANG
+
+logging.basicConfig(level=logging.DEBUG, filename='app.log', filemode='w')
+logger = logging.getLogger(__name__)
 
 
-def compare_models(modelList, fileName = "results.pkl"):
-    results = {}
-
-    for modelName in modelList:
-        myModel, myData, myTrainer = load_model_data_trainer(modelName)
-        del(myData)
-        score = myTrainer.eval_cycle(myModel, modelName, showTranslations=False, calcBleu=True)
-
-        results[modelName] = score
-
-    with open(f'{os.getcwd()}//{fileName}', 'wb+') as f:
-        pickle.dump(results, f)
-
-def show_results(fileName = "results.pkl"):
-
-    with open(f'{os.getcwd()}//{fileName}', 'rb') as f:
-        results = pickle.load(f)
-
-    values = results.values()
-
-    plt.subplot(2, 1, 1)
-    plt.bar(results.keys(), [x[0] for x in values])
-    plt.xlabel("Model")
-    plt.ylabel("Loss")
-    plt.title("Model Losses")
-    plt.subplot(2, 1, 2)
-    plt.bar(results.keys(), [x[1] for x in values])
-    plt.xlabel("Model")
-    plt.ylabel("Bleu Score")
-    plt.title("Bleu Scores")
-    plt.show()
-    
-
-def load_model_data_trainer(modelName):
-    params = modelDict[modelName]
+def load_model_data_trainer(modelParams):
+    params = modelDict[modelParams]
     myData = data.europarl_data(MAX_TOKENS)
 
     encoder = model.TransformerEncoder(myData.tokenizer.get_vocab_size(), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
@@ -49,19 +19,20 @@ def load_model_data_trainer(modelName):
 
 device = settings.device
 torch.set_default_device(device)
-myModel, myData, myTrainer = load_model_data_trainer(MODEL_NAME)
+modelName = MODEL_PARAMS + "_" + SRC_LANG + "-" + TRG_LANG
+myModel, myData, myTrainer = load_model_data_trainer(MODEL_PARAMS)
 
-# myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=False, modelName = MODEL_NAME, calcBleu=True, bleuPriority=True, fromBest = True)
-
-myModel.loadDict(MODEL_NAME)
+try:
+    myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=True, modelName = modelName, calcBleu=True, bleuPriority=False, fromBest = True)
+except Exception as e:
+    logger.exception("Exception occurred", exc_info=e)
+    os.system('shutdown -s')
+# myModel.loadDict(modelName)
 # myTrainer.eval_cycle(myModel, showTranslations=False, calcBleu=True)
 
-# decode.greedy_eval(1, myModel, myData)
-# decode.decoder_eval(myModel, 10)
-
-# compare_models(modelDict.keys())
-# compare_models(["Full", "Small"])
-# show_results()
+# decode.greedy_eval(100, myModel, myData)
+# decode.beam_eval(myModel, 100)
+# decode.compare_vs_forward(myModel, 10)
 
 '''
 ENCODER

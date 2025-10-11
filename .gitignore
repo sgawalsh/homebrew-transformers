@@ -5,3 +5,4 @@ runs/*
 cifar-10-batches-py/*
 checkpoints/*
 plots/*
+app.log
