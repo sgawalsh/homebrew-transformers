@@ -46,7 +46,7 @@ class trainer:
         if not self.trainDataloader:
             self.trainDataloader = self.data.train_dataloader()
         if not loadModel:
-            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .8, schedulerPatience)
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, schedulerPatience)
 
         for _ in range(epochs):
             self.i += 1
@@ -138,6 +138,11 @@ class trainer:
         self.showTranslations = showTranslations
         self.calcBleu = calcBleu
 
+        if not self.evalDataloader:
+            self.evalDataloader = self.data.val_dataloader()
+        if not self.trainDataloader:
+            self.trainDataloader = self.data.train_dataloader()
+
         return self._train_cycle(True)
 
     def _show_translations(self, inSrc, inTarg, inPred):
@@ -150,11 +155,13 @@ class trainer:
 
     def _train_cycle(self, isEval = False):
         if isEval:
-            dataGen = self.evalDataloader if self.evalDataloader else self.data.val_dataloader()
+            dataGen = self.evalDataloader
             self.model.eval()
+            torch.set_grad_enabled(False)
         else:
-            dataGen = self.trainDataloader if self.trainDataloader else self.data.train_dataloader()
+            dataGen = self.trainDataloader
             self.model.train()
+            torch.set_grad_enabled(True)
         
         dataLength = len(dataGen.dataset)
         runningLoss, totalBleuScore, processed = 0.0, 0.0, 0
@@ -165,11 +172,11 @@ class trainer:
             loss = self._loss(Y, data[-1]) # (tgtTensor(t+1))
 
             if self.showTranslations:
-                self._show_translations(data[0], torch.argmax(Y, 2), data[-1])
+                self._show_translations(data[0], torch.argmax(Y.detach(), 2), data[-1])
             
-            if self.calcBleu: # subword level bleu score
+            if self.calcBleu:
                 decoded_ref  = self.data.tokenizer.decode_batch(data[-1].tolist(), skip_special_tokens=True)
-                decoded_can = self.data.tokenizer.decode_batch(torch.argmax(Y, 2).tolist(), skip_special_tokens=True)
+                decoded_can = self.data.tokenizer.decode_batch(torch.argmax(Y.detach(), 2).tolist(), skip_special_tokens=True)
 
                 for ref, can in zip(decoded_ref, decoded_can):
                     try:
@@ -181,7 +188,7 @@ class trainer:
                 with torch.no_grad():
                     loss.backward()
                     self.optim.step()
-                    self.optim.zero_grad()
+                    self.optim.zero_grad(set_to_none=True)
                     
             batchSize = data[0].shape[0]
             runningLoss += loss.item() * batchSize
