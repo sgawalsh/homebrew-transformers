@@ -43,14 +43,14 @@ def create_dataset(srcFile, tgtFile):
 def encode_dataset(dataset, tokenizer: tokenizers.Tokenizer):
     dataList = []
 
-    for i, (srcSentence, tgtSentence) in tqdm(enumerate(dataset)):
+    for srcSentence, tgtSentence in tqdm(dataset):
         srcLine = tokenizer.encode(srcSentence.strip().lower() + '<eos>').ids
         tgtLine = tokenizer.encode('<bos>' + tgtSentence.strip().lower() + '<eos>').ids
 
         if max(len(srcLine), len(tgtLine)) > MAX_LEN or min(len(srcLine), len(tgtLine)) < MIN_LEN: # skip sentences that are too long or too short
             continue
         
-        dataList.append([i, srcLine, tgtLine])
+        dataList.append([srcLine, tgtLine])
 
     return dataList
 
