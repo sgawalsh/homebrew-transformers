@@ -9,6 +9,23 @@ from model import Seq2Seq
 
 bleuSuffix, lossSuffix = "_bestBleu", "_bestLoss"
 
+class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, d_model, warmup_steps=4000, min_lr=1e-6, last_epoch=-1):
+        self.d_model_constant = d_model ** -0.5
+        self.warmup_steps = warmup_steps
+        self.warmup_steps_constant = warmup_steps ** -1.5
+        self.min_lr = min_lr
+        super().__init__(optimizer, last_epoch=last_epoch)
+
+    def get_lr(self):
+        if self.last_epoch <= self.warmup_steps:
+            scale = self.last_epoch * self.warmup_steps_constant
+        else:
+            scale = self.last_epoch ** -0.5
+        scale *= self.d_model_constant
+
+        return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
+
 class trainer:
     def __init__(self, myData: europarl_data, smoothing = False):
 
@@ -19,11 +36,12 @@ class trainer:
         self.smoothingFn = SmoothingFunction().method1 if smoothing else None
         self.evalDataloader, self.trainDataloader = None, None
 
-    def fit(self, model: Seq2Seq, lr, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, schedulerPatience = 2):
+    def fit(self, model: Seq2Seq, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True):
         self.model = model
 
-        self.optim = torch.optim.Adam(self.model.parameters(), lr = lr, betas=(0.9, 0.98), eps=1e-9)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
+        self.optim = torch.optim.Adam(self.model.parameters(), lr = 1, betas=(0.9, 0.98), eps=1e-9)
+        # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
+        self.scheduler = TransformerLRScheduler(self.optim, model.encoder.embedding.embedding_dim)
         self.showTranslations = showTranslations
         self.modelName = modelName
         self.calcBleu = calcBleu
@@ -45,20 +63,18 @@ class trainer:
             self.evalDataloader = self.data.val_dataloader()
         if not self.trainDataloader:
             self.trainDataloader = self.data.train_dataloader()
-        if not loadModel:
-            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, 'min', .5, schedulerPatience)
 
         for _ in range(epochs):
             self.i += 1
             print('Training epoch:')
-            cycleLoss, bleuScore = self._train_cycle()
+            cycleLoss, bleuScore = self._data_cycle()
             trainLoss.append(cycleLoss)
             trainBleu.append(bleuScore)
             self.writer.add_scalar('Loss/Train', cycleLoss, self.i)
             self.writer.add_scalar('BLEU/Train', bleuScore, self.i)
             
             print('Eval epoch:')
-            cycleLoss, bleuScore = self._train_cycle(True)
+            cycleLoss, bleuScore = self._data_cycle(True)
             evalLoss.append(cycleLoss)
             evalBleu.append(bleuScore)
             self.writer.add_scalar('Loss/Eval', cycleLoss, self.i)
@@ -143,7 +159,7 @@ class trainer:
         if not self.trainDataloader:
             self.trainDataloader = self.data.train_dataloader()
 
-        return self._train_cycle(True)
+        return self._data_cycle(True)
 
     def _show_translations(self, inSrc, inTarg, inPred):
         src = self.data.tokenizer.decode_batch(inSrc, skip_special_tokens=True)
@@ -153,7 +169,7 @@ class trainer:
         for s, t, p in zip(src, tgt, pred):
             print(f'{" ".join(s)} => {" ".join(t)} => {" ".join(p)}')
 
-    def _train_cycle(self, isEval = False):
+    def _data_cycle(self, isEval = False):
         if isEval:
             dataGen = self.evalDataloader
             self.model.eval()
@@ -188,19 +204,18 @@ class trainer:
                 with torch.no_grad():
                     loss.backward()
                     self.optim.step()
+                    self.scheduler.step()
                     self.optim.zero_grad(set_to_none=True)
                     
             batchSize = data[0].shape[0]
             runningLoss += loss.item() * batchSize
             processed += batchSize
             try:
-                print(f'{self.i}/{self.epochs} - {processed:,}/{dataLength:,} - {100 * processed/dataLength:.2f}% - Running Loss: {runningLoss / processed:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / processed * 100:.2f} - Speed: {(processed / (time() - start)):.3f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
+                print(f'{self.i}/{self.epochs} - {processed:,}/{dataLength:,} - {100 * processed/dataLength:.2f}% - Running Loss: {runningLoss / processed:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / processed * 100:.2f} - Learning Rate: {self.scheduler.get_lr()[0]:.2e} - Speed: {(processed / (time() - start)):.2f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
             except ZeroDivisionError:
                 pass
 
         print()
-        if isEval:
-            self.scheduler.step(runningLoss)
         return runningLoss / processed, totalBleuScore / processed * 100 if self.calcBleu else 0.0
 
     def _loss(self, Y_hat, Y, averaged=True):
