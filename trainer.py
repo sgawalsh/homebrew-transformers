@@ -1,4 +1,4 @@
-import os, torch, datetime
+import os, torch, datetime, settings
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
@@ -13,17 +13,17 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, d_model, warmup_steps=4000, min_lr=1e-6, last_epoch=-1):
         self.d_model_constant = d_model ** -0.5
         self.warmup_steps = warmup_steps
+        self.scale_factor = settings.MAX_TOKENS / settings.MAX_TOKENS_REF
         self.warmup_steps_constant = warmup_steps ** -1.5
         self.min_lr = min_lr
         super().__init__(optimizer, last_epoch=last_epoch)
 
     def get_lr(self):
-        if self.last_epoch <= self.warmup_steps:
-            scale = self.last_epoch * self.warmup_steps_constant
-        else:
-            scale = self.last_epoch ** -0.5
-        scale *= self.d_model_constant
-
+        effective_step = self.last_epoch * self.scale_factor
+        try:
+            scale = self.d_model_constant * min(effective_step * self.warmup_steps_constant, effective_step ** -0.5)
+        except ZeroDivisionError:
+            scale = 0.0
         return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
 
 class trainer:
@@ -58,6 +58,8 @@ class trainer:
                 trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath + (bleuSuffix if bleuPriority else lossSuffix))
             else:
                 trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath)
+            for param_group, lr in zip(self.optim.param_groups, self.scheduler.get_last_lr()):
+                param_group['lr'] = lr
 
         if not self.evalDataloader:
             self.evalDataloader = self.data.val_dataloader()

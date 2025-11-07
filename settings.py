@@ -5,6 +5,7 @@ MAX_LEN = 2000 # Maximum tokens per sentence, can cause OOM error if too high so
 MIN_LEN = 1 # Minimum tokens per sentence
 MODEL_PARAMS = "Small" # Determines model parameters from modelDict in settings.py
 MAX_TOKENS = 2000 # Set lower for larger models or less processing power
+MAX_TOKENS_REF = 50000 # Number of tokens used in original transformer paper
 SRC_LANG = "en" # Source language
 TRG_LANG = "de" # Target language
 DATA_MODE = "wmt" # europarl or wmt source data
