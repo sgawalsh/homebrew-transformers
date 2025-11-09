@@ -16,14 +16,31 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         self.scale_factor = settings.MAX_TOKENS / settings.MAX_TOKENS_REF
         self.warmup_steps_constant = warmup_steps ** -1.5
         self.min_lr = min_lr
+        # Assign the initial method
+        self.get_lr = self._get_lr_warmup.__get__(self, TransformerLRScheduler)
         super().__init__(optimizer, last_epoch=last_epoch)
 
-    def get_lr(self):
-        effective_step = self.last_epoch * self.scale_factor
-        try:
-            scale = self.d_model_constant * min(effective_step * self.warmup_steps_constant, effective_step ** -0.5)
-        except ZeroDivisionError:
-            scale = 0.0
+
+
+    def _get_lr_warmup(self):
+        """Called during warmup, then replaced once warmup is complete."""
+        effective_step = max(self.last_epoch * self.scale_factor, 1e-8)
+        warmup_term = effective_step * self.warmup_steps_constant
+        decay_term = effective_step ** -0.5
+
+        # when decay term becomes smaller, permanently switch
+        if decay_term < warmup_term:
+            # Replace get_lr with post-warmup version
+            self.get_lr = self._get_lr_decay.__get__(self, TransformerLRScheduler)
+            scale = self.d_model_constant * decay_term
+        else:
+            scale = self.d_model_constant * warmup_term
+
+        return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
+
+    def _get_lr_decay(self):
+        """Post-warmup: only decay term matters."""
+        scale = self.d_model_constant * (self.last_epoch * self.scale_factor) ** -0.5
         return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
 
 class trainer:
