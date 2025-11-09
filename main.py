@@ -23,10 +23,11 @@ modelName = MODEL_PARAMS + "_" + SRC_LANG + "-" + TRG_LANG
 myModel, myData, myTrainer = load_model_data_trainer(MODEL_PARAMS)
 
 try:
-    myTrainer.fit(myModel, 0.0001, epochs=1, showTranslations=False, loadModel=False, shutDown=True, modelName = modelName, calcBleu=True, bleuPriority=False, fromBest = True)
+    myTrainer.fit(myModel, epochs=4, showTranslations=False, loadModel=False, shutDown=settings.SHUTDOWN_ON_COMPLETE, modelName = modelName, calcBleu=True, bleuPriority=False, fromBest = True)
 except Exception as e:
     logger.exception("Exception occurred", exc_info=e)
-    os.system('shutdown -s')
+    if settings.SHUTDOWN_ON_ERROR:
+        os.system('shutdown -s')
 # myModel.loadDict(modelName)
 # myTrainer.eval_cycle(myModel, showTranslations=False, calcBleu=True)
 

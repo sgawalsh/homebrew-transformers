@@ -9,7 +9,8 @@ MAX_TOKENS_REF = 50000 # Number of tokens used in original transformer paper
 SRC_LANG = "en" # Source language
 TRG_LANG = "de" # Target language
 DATA_MODE = "wmt" # europarl or wmt source data
-SHUTDOWN = False # Shutdown PC after training completes
+SHUTDOWN_ON_COMPLETE = False # Shutdown PC after training completes
+SHUTDOWN_ON_ERROR = False # Shutdown PC after error occurs
 
 dataFileDict = {
     "europarl": {
