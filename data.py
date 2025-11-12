@@ -64,9 +64,9 @@ def create_training_split_europarl(evalNum=1500, randomSeed=0, shuffle = True):
         random.shuffle(dataset)
     train = dataset[:-evalNum]
     test = dataset[-evalNum:]
-    dump_file(train, f"train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
-    dump_file(test, f"test_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
-    src_tgt_shared_tokenizer.save(f"data//{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
+    dump_file(train, f"{DATA_MODE}_train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    dump_file(test, f"{DATA_MODE}_test_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    src_tgt_shared_tokenizer.save(f"data//{DATA_MODE}_{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
 
 def create_training_split_wmt():
     srcFile = dataFileDict[DATA_MODE]["src_train"]
@@ -75,9 +75,23 @@ def create_training_split_wmt():
     testDataset = zip_source_target(dataFileDict[DATA_MODE]["src_test"], dataFileDict[DATA_MODE]["tgt_test"])
     testDataset = encode_dataset(testDataset, src_tgt_shared_tokenizer)
 
-    dump_file(trainDataset, f"train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
-    dump_file(testDataset, f"test_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
-    src_tgt_shared_tokenizer.save(f"data//{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
+    dump_file(trainDataset, f"{DATA_MODE}_train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    dump_file(testDataset, f"{DATA_MODE}_test_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    src_tgt_shared_tokenizer.save(f"data//{DATA_MODE}_{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
+
+def create_training_split_wmt_custom_split(evalNum=5000, randomSeed=0, shuffle = True):
+    srcFile = dataFileDict[DATA_MODE]["src_train"]
+    tgtFile = dataFileDict[DATA_MODE]["tgt_train"]
+    dataset, src_tgt_shared_tokenizer = create_dataset(srcFile, tgtFile)
+    if shuffle:
+        if randomSeed is not None:
+            random.seed(randomSeed)
+        random.shuffle(dataset)
+    train = dataset[:-evalNum]
+    test = dataset[-evalNum:]
+    dump_file(train, f"{DATA_MODE}_train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    dump_file(test, f"{DATA_MODE}_test_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
+    src_tgt_shared_tokenizer.save(f"data//{DATA_MODE}_{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
 
 def french_regex(text):
     # 1. Add leading apostrophe space
@@ -206,18 +220,17 @@ class TranslationDataset(torch.utils.data.Dataset):
 
 class europarl_data:
     def __init__(self, maxTokens=2000):
-        self.tokenizer = tokenizers.Tokenizer.from_file(f"data//{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
-
+        self.tokenizer = tokenizers.Tokenizer.from_file(f"data//{DATA_MODE}_{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
         self.max_tokens = maxTokens
 
     def train_dataloader(self):
-        with open(f'{os.getcwd()}//data//train_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//{DATA_MODE}_train_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
 
         return self.build_dataloader(data)
 
     def val_dataloader(self):
-        with open(f'{os.getcwd()}//data//test_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//{DATA_MODE}_test_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
 
         return self.build_dataloader(data, False)
@@ -238,4 +251,4 @@ class europarl_data:
         return collate_fn(random.sample(data, n), pad_id=self.tokenizer.token_to_id('<pad>'))
     
 # clean_data("europarl-v7.fr-en.en", "europarl-v7.fr-en.fr", "europarl-v7.fr-en.clean.en", "europarl-v7.fr-en.clean.fr")
-# create_training_split_europarl()
+# create_training_split_wmt_custom_split()
