@@ -1,6 +1,8 @@
 name: transformers
 channels:
   - defaults
+  - pytorch
+  - nvidia
 dependencies:
   - python=3.11
   - torchvision
@@ -14,3 +16,4 @@ dependencies:
   - conda-forge::tensorboard
   - conda-forge::tokenizers
   - conda-forge::matplotlib
+  - conda-forge::sacrebleu
