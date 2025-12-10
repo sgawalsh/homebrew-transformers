@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 def load_model_data_trainer(modelParams):
     params = modelDict[modelParams]
-    myData = data.europarl_data(MAX_TOKENS)
+    myData = data.source_target_dataloader(MAX_TOKENS)
 
     encoder = model.TransformerEncoder(myData.tokenizer.get_vocab_size(), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])
     decoder = model.TransformerDecoder(myData.tokenizer.get_vocab_size(), params["num_hiddens"], params["ffn_num_hiddens"], params["num_heads"], params["num_blks"], params["dropout"])

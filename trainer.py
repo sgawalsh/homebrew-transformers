@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from time import time
 from torch.utils.tensorboard import SummaryWriter
-from data import europarl_data
+from data import source_target_dataloader
 from model import Seq2Seq
 
 bleuSuffix, lossSuffix = "_bestBleu", "_bestLoss"
@@ -44,7 +44,7 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
 
 class trainer:
-    def __init__(self, myData: europarl_data, smoothing = False):
+    def __init__(self, myData: source_target_dataloader, smoothing = False):
 
         self.data = myData
         self.bestLoss = float('inf')

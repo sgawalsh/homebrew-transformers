@@ -1,20 +1,18 @@
 import model, torch, data, sacrebleu
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from tqdm import tqdm
 from tokenizers import Tokenizer
-from settings import MAX_LEN
 
-def greedy_eval(n: int, myModel: model.EncoderDecoder, myData: data.europarl_data):
+def greedy_eval(n: int, myModel: model.EncoderDecoder, myData: data.source_target_dataloader):
     myModel.eval()
     input = myData.get_rand_sample(n)
     preds, _ = myModel.my_predict_step(input[0], input[2], myData.tokenizer.token_to_id('<bos>'), round(input[0].shape[1] * 1.5))
 
     print_results(input[0].tolist(), input[-1].tolist(), preds.tolist(), myData.tokenizer)
-    print_bleu(input[-1].tolist(), preds.tolist(), myData.tokenizer)
+    print_sacre_bleu(input[-1].tolist(), preds.tolist(), myData.tokenizer)
 
 def beam_eval(myModel: model.EncoderDecoder, n: int):
     myModel.eval()
-    myData = data.europarl_data()
+    myData = data.source_target_dataloader()
     sampleData = list(zip(*myData.get_rand_sample(n)))
     srcList, refList, canList = [], [], []
     for el in tqdm(sampleData):
@@ -24,22 +22,8 @@ def beam_eval(myModel: model.EncoderDecoder, n: int):
         canList.append(torch.squeeze(pred).tolist())
 
     print_results(srcList, refList, canList, myData.tokenizer)
-    print_bleu(refList, canList, myData.tokenizer)
     print_sacre_bleu(refList, canList, myData.tokenizer)
 
-def print_bleu(refs, preds, tokenizer: Tokenizer, smoothing = False):
-    bleuWeights = {1: (1, 0, 0, 0), 2: (.5, .5, 0, 0), 3: (.33, .33, .33, 0), 4: (.25, .25, .25, .25)}
-    bleuScore = 0.0
-    decoded_pred = tokenizer.decode_batch(preds, skip_special_tokens=True)
-    decoded_ref  = tokenizer.decode_batch(refs, skip_special_tokens=True)
-
-    for ref, can in zip(decoded_ref, decoded_pred):
-        try:
-            bleuScore += sentence_bleu([ref.split()], can.split(), weights=bleuWeights[min(4, len(can))], smoothing_function=SmoothingFunction().method1 if smoothing else None)
-        except KeyError:
-            pass
-
-    print(f'Bleu Score: {bleuScore * 100 / len(decoded_pred):.3f}')
 
 
 def print_sacre_bleu(refs, preds, tokenizer: Tokenizer, smoothing=False):

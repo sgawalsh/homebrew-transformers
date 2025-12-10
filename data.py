@@ -218,7 +218,7 @@ class TranslationDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.pairs[idx]  # returns (src_ids, tgt_ids)
 
-class europarl_data:
+class source_target_dataloader:
     def __init__(self, maxTokens=2000):
         self.tokenizer = tokenizers.Tokenizer.from_file(f"data//{DATA_MODE}_{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
         self.max_tokens = maxTokens
