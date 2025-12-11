@@ -246,7 +246,7 @@ class source_target_dataloader:
         return loader
     
     def get_rand_sample(self, n, isEval=True):
-        with open(f'{os.getcwd()}//data//{"test" if isEval else "train"}_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
+        with open(f'{os.getcwd()}//data//{DATA_MODE}_{"test" if isEval else "train"}_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
         return collate_fn(random.sample(data, n), pad_id=self.tokenizer.token_to_id('<pad>'))
     
