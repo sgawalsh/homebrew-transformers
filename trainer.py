@@ -20,8 +20,6 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         self.get_lr = self._get_lr_warmup.__get__(self, TransformerLRScheduler)
         super().__init__(optimizer, last_epoch=last_epoch)
 
-
-
     def _get_lr_warmup(self):
         """Called during warmup, then replaced once warmup is complete."""
         effective_step = max(self.last_epoch * self.scale_factor, 1e-8)
@@ -44,9 +42,10 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
 
 class trainer:
-    def __init__(self, myData: source_target_dataloader, smoothing = False):
+    def __init__(self, myData: source_target_dataloader, myModel: Seq2Seq, smoothing = False):
 
         self.data = myData
+        self.model = myModel
         self.bestLoss = float('inf')
         self.bestBleu = float('-inf')
         self.bleuWeights = {1: (1, 0, 0, 0), 2: (.5, .5, 0, 0), 3: (.33, .33, .33, 0), 4: (.25, .25, .25, .25)}
@@ -54,8 +53,6 @@ class trainer:
         self.evalDataloader, self.trainDataloader = None, None
 
     def fit(self, model: Seq2Seq, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True):
-        self.model = model
-
         self.optim = torch.optim.Adam(self.model.parameters(), lr = 1, betas=(0.9, 0.98), eps=1e-9)
         # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
         self.scheduler = TransformerLRScheduler(self.optim, model.encoder.embedding.embedding_dim)
@@ -72,9 +69,9 @@ class trainer:
         
         if loadModel:
             if fromBest:
-                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath + (bleuSuffix if bleuPriority else lossSuffix))
+                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModelState(checkpointPath + (bleuSuffix if bleuPriority else lossSuffix))
             else:
-                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModel(checkpointPath)
+                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModelState(checkpointPath)
             for param_group, lr in zip(self.optim.param_groups, self.scheduler.get_last_lr()):
                 param_group['lr'] = lr
 
@@ -101,13 +98,13 @@ class trainer:
 
             if bleuScore > self.bestBleu:
                 self.bestBleu = bleuScore
-                self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = bleuSuffix)
+                self.saveModelState(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = bleuSuffix)
             if cycleLoss < self.bestLoss:
                 self.bestLoss = cycleLoss
-                self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = lossSuffix)
+                self.saveModelState(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = lossSuffix)
 
             # save checkpoint
-            self.saveModel(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath)
+            self.saveModelState(trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath)
 
         if shutDown:
             os.system('shutdown -s')
@@ -130,7 +127,7 @@ class trainer:
 
         plt.savefig(f'plots/{modelName}_{datetime.datetime.now().strftime("%Y-%m-%d_%H_%M_%S")}')
 
-    def saveModel(self, trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = ""):
+    def saveModelState(self, trainLoss, trainBleu, evalLoss, evalBleu, checkpointPath, suffix = ""):
         state = {
             'epoch': self.i,
             'model_state': self.model.state_dict(),
@@ -146,7 +143,7 @@ class trainer:
         os.makedirs('checkpoints', exist_ok=True)
         torch.save(state, checkpointPath + suffix + ".pth")
 
-    def loadModel(self, checkpointPath):
+    def loadModelState(self, checkpointPath):
         checkpointPath += '.pth'
         if os.path.exists(checkpointPath):
             state = torch.load(checkpointPath)
@@ -163,6 +160,14 @@ class trainer:
             print(f'Checkpoint found, resumed from epoch {self.i}')
             self.epochs += self.i
             return trainLoss, trainBleu, evalLoss, evalBleu
+        else:
+            raise FileNotFoundError("No checkpoint found")
+        
+    def loadModelDict(self, modelName):
+        checkpointPath = f'checkpoints/{modelName}.pth'
+        if os.path.exists(checkpointPath):
+            state = torch.load(checkpointPath)
+            self.model.load_state_dict(state['model_state'])
         else:
             raise FileNotFoundError("No checkpoint found")
 

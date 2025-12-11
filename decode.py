@@ -24,8 +24,6 @@ def beam_eval(myModel: model.EncoderDecoder, n: int):
     print_results(srcList, refList, canList, myData.tokenizer)
     print_sacre_bleu(refList, canList, myData.tokenizer)
 
-
-
 def print_sacre_bleu(refs, preds, tokenizer: Tokenizer, smoothing=False):
     # Decode the batches into strings
     decoded_pred = tokenizer.decode_batch(preds, skip_special_tokens=True)
