@@ -1,6 +1,6 @@
 import pickle, torch, os, random, re, tokenizers, math
 from tqdm import tqdm
-from settings import MAX_LEN, MIN_LEN, SRC_LANG, TRG_LANG, DATA_MODE, dataFileDict
+from settings import MAX_LEN, MIN_LEN, SRC_LANG, TRG_LANG, DATA_MODE, dataModeDict
 
 def train_shared_bpe(fileList, vocab_size=32000):
     tokenizer = tokenizers.SentencePieceBPETokenizer()
@@ -55,8 +55,8 @@ def encode_dataset(dataset, tokenizer: tokenizers.Tokenizer):
     return dataList
 
 def create_training_split_europarl(evalNum=1500, randomSeed=0, shuffle = True):
-    srcFile = dataFileDict[DATA_MODE]["src"]
-    tgtFile = dataFileDict[DATA_MODE]["tgt"]
+    srcFile = dataModeDict[DATA_MODE]["src"]
+    tgtFile = dataModeDict[DATA_MODE]["tgt"]
     dataset, src_tgt_shared_tokenizer = create_dataset(srcFile, tgtFile)
     if shuffle:
         if randomSeed is not None:
@@ -69,10 +69,10 @@ def create_training_split_europarl(evalNum=1500, randomSeed=0, shuffle = True):
     src_tgt_shared_tokenizer.save(f"data//{DATA_MODE}_{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
 
 def create_training_split_wmt():
-    srcFile = dataFileDict[DATA_MODE]["src_train"]
-    tgtFile = dataFileDict[DATA_MODE]["tgt_train"]
+    srcFile = dataModeDict[DATA_MODE]["src_train"]
+    tgtFile = dataModeDict[DATA_MODE]["tgt_train"]
     trainDataset, src_tgt_shared_tokenizer = create_dataset(srcFile, tgtFile)
-    testDataset = zip_source_target(dataFileDict[DATA_MODE]["src_test"], dataFileDict[DATA_MODE]["tgt_test"])
+    testDataset = zip_source_target(dataModeDict[DATA_MODE]["src_test"], dataModeDict[DATA_MODE]["tgt_test"])
     testDataset = encode_dataset(testDataset, src_tgt_shared_tokenizer)
 
     dump_file(trainDataset, f"{DATA_MODE}_train_{SRC_LANG}-{TRG_LANG}_bpe.pkl")
@@ -80,8 +80,8 @@ def create_training_split_wmt():
     src_tgt_shared_tokenizer.save(f"data//{DATA_MODE}_{SRC_LANG}_{TRG_LANG}_shared_tokenizer.json")
 
 def create_training_split_wmt_custom_split(evalNum=5000, randomSeed=0, shuffle = True):
-    srcFile = dataFileDict[DATA_MODE]["src_train"]
-    tgtFile = dataFileDict[DATA_MODE]["tgt_train"]
+    srcFile = dataModeDict[DATA_MODE]["src_train"]
+    tgtFile = dataModeDict[DATA_MODE]["tgt_train"]
     dataset, src_tgt_shared_tokenizer = create_dataset(srcFile, tgtFile)
     if shuffle:
         if randomSeed is not None:

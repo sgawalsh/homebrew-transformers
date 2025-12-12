@@ -12,7 +12,6 @@ bleuSuffix, lossSuffix = "_bestBleu", "_bestLoss"
 class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, d_model, warmup_steps=4000, min_lr=1e-6, last_epoch=-1):
         self.d_model_constant = d_model ** -0.5
-        self.warmup_steps = warmup_steps
         self.scale_factor = settings.MAX_TOKENS / settings.MAX_TOKENS_REF
         self.warmup_steps_constant = warmup_steps ** -1.5
         self.min_lr = min_lr
@@ -52,10 +51,10 @@ class trainer:
         self.smoothingFn = SmoothingFunction().method1 if smoothing else None
         self.evalDataloader, self.trainDataloader = None, None
 
-    def fit(self, model: Seq2Seq, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True):
+    def fit(self, model: Seq2Seq, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, warmup = 4000):
         self.optim = torch.optim.Adam(self.model.parameters(), lr = 1, betas=(0.9, 0.98), eps=1e-9)
         # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
-        self.scheduler = TransformerLRScheduler(self.optim, model.encoder.embedding.embedding_dim)
+        self.scheduler = TransformerLRScheduler(self.optim, model.encoder.embedding.embedding_dim, warmup_steps=warmup)
         self.showTranslations = showTranslations
         self.modelName = modelName
         self.calcBleu = calcBleu
