@@ -6,14 +6,20 @@ from time import time
 from torch.utils.tensorboard import SummaryWriter
 from data import source_target_dataloader
 from model import Seq2Seq
+import matplotlib.pyplot as plt
 
 bleuSuffix, lossSuffix = "_bestBleu", "_bestLoss"
 
 class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
-    def __init__(self, optimizer, d_model, warmup_steps=4000, min_lr=1e-6, last_epoch=-1):
+    def __init__(self, optimizer, d_model, warmup_steps=4000, min_lr=1e-6, last_epoch=-1, use_warmup_quadratic=False, max_lr = 0.00005):
         self.d_model_constant = d_model ** -0.5
         self.scale_factor = settings.MAX_TOKENS / settings.MAX_TOKENS_REF
-        self.warmup_steps_constant = warmup_steps ** -1.5
+        self.max_lr = max_lr / self.d_model_constant
+        if use_warmup_quadratic:
+            self.solve_constants()
+        else:
+            self.warmup_steps_constant = warmup_steps ** -1.5
+            self.warmup_fn = self._linear_warmup.__get__(self, TransformerLRScheduler)
         self.min_lr = min_lr
         # Assign the initial method
         self.get_lr = self._get_lr_warmup.__get__(self, TransformerLRScheduler)
@@ -22,7 +28,8 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
     def _get_lr_warmup(self):
         """Called during warmup, then replaced once warmup is complete."""
         effective_step = max(self.last_epoch * self.scale_factor, 1e-8)
-        warmup_term = effective_step * self.warmup_steps_constant
+        # warmup_term = effective_step * self.warmup_steps_constant
+        warmup_term = self.warmup_fn(effective_step)
         decay_term = effective_step ** -0.5
 
         # when decay term becomes smaller, permanently switch
@@ -39,6 +46,19 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         """Post-warmup: only decay term matters."""
         scale = self.d_model_constant * (self.last_epoch * self.scale_factor) ** -0.5
         return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
+    
+    def _linear_warmup(self, x):
+        return min(x * self.warmup_steps_constant, self.max_lr)
+    
+    def solve_constants(self):
+        self.max_lr = self.max_lr / self.d_model_constant
+        self.x_intercept = self.max_lr ** -2
+        a = -self.max_lr / (self.x_intercept ** 2)
+
+        def _quadratic_warmup(self, x):
+            return a * (x - self.x_intercept) ** 2 + self.max_lr
+        
+        self.warmup_fn = _quadratic_warmup.__get__(self, TransformerLRScheduler)
 
 class trainer:
     def __init__(self, myData: source_target_dataloader, myModel: Seq2Seq, smoothing = False):
@@ -222,7 +242,7 @@ class trainer:
                         totalBleuScore += sentence_bleu([ref.split()], can.split(), weights=self.bleuWeights[min(4, len(can))], smoothing_function=self.smoothingFn)
                     except KeyError:
                         pass
-
+            
             if not isEval:
                 with torch.no_grad():
                     loss.backward()
@@ -239,6 +259,7 @@ class trainer:
                 pass
 
         print()
+
         return runningLoss / processed, totalBleuScore / processed * 100 if self.calcBleu else 0.0
 
     def _loss(self, Y_hat, Y, averaged=True):
