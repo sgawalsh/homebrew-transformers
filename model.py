@@ -244,52 +244,54 @@ class EncoderDecoder(nn.Module):
         return self.decoder(dec_X, dec_state)[0]
     
     def my_predict_step(self, src, src_valid_len, bos_id, tgt_max_len, save_attention_weights=False):
-        enc_all_outputs = self.encoder(src, src_valid_len)
-        dec_state = self.decoder.init_state(enc_all_outputs, src_valid_len) # [enc_outputs, enc_valid_lens, [None] * self.num_blks] -> [enc_outputs, enc_valid_lens, decoder_block_states]
-        attention_weights = []
-        outputs = [torch.full((src.shape[0], 1), bos_id)] # bos tokens
-        for _ in range(tgt_max_len):
-            Y, dec_state = self.decoder(outputs[-1], dec_state) # latest predictions
-            outputs.append(torch.argmax(Y, 2)) # append predictions
-            if save_attention_weights:
-                attention_weights.append(self.decoder.attention_weights)
-        return torch.concat(outputs[1:], 1), attention_weights
+        with torch.no_grad():
+            enc_all_outputs = self.encoder(src, src_valid_len)
+            dec_state = self.decoder.init_state(enc_all_outputs, src_valid_len) # [enc_outputs, enc_valid_lens, [None] * self.num_blks] -> [enc_outputs, enc_valid_lens, decoder_block_states]
+            attention_weights = []
+            outputs = [torch.full((src.shape[0], 1), bos_id)] # bos tokens
+            for _ in range(tgt_max_len):
+                Y, dec_state = self.decoder(outputs[-1], dec_state) # latest predictions
+                outputs.append(torch.argmax(Y, 2)) # append predictions
+                if save_attention_weights:
+                    attention_weights.append(self.decoder.attention_weights)
+            return torch.concat(outputs[1:], 1), attention_weights
 
     def my_beam_search_predict_step(self, src, src_valid_len, bos_id, tgt_max_len, beam_size=4, length_penalty=0.6):
-        # Step 1: Encode source
-        enc_outputs = self.encoder(src, src_valid_len)
-        dec_state = self.decoder.init_state(enc_outputs, src_valid_len)
+        with torch.no_grad():
+            # Step 1: Encode source
+            enc_outputs = self.encoder(src, src_valid_len)
+            dec_state = self.decoder.init_state(enc_outputs, src_valid_len)
 
-        # Step 2: Initialize beam
-        beams = [([bos_id], 0.0, dec_state)]  # (tokens, log_prob, state)
+            # Step 2: Initialize beam
+            beams = [([bos_id], 0.0, dec_state)]  # (tokens, log_prob, state)
 
-        # Step 3: Main loop -> For all current beams, take n top hypotheses, finally keep top n beams
-        for _ in range(tgt_max_len):
-            new_beams = []
+            # Step 3: Main loop -> For all current beams, take n top hypotheses, finally keep top n beams
+            for _ in range(tgt_max_len):
+                new_beams = []
 
-            for tokens, log_prob, state in beams:
-                if state[3][0] != None:
-                    state = state[:3] + [[layer.detach() for layer in state[3]]]
-                prev_input = torch.tensor(tokens[-1]).reshape(1, 1)
-                Y, new_state = self.decoder(prev_input, state)  # shape: [1, 1, vocab_size]
+                for tokens, log_prob, state in beams:
+                    if state[3][0] != None:
+                        state = state[:3] + [[layer.detach() for layer in state[3]]]
+                    prev_input = torch.tensor(tokens[-1]).reshape(1, 1)
+                    Y, new_state = self.decoder(prev_input, state)  # shape: [1, 1, vocab_size]
 
-                probs = torch.log_softmax(Y.squeeze(1), dim=-1)  # [1, vocab_size]
-                topk_probs, topk_ids = probs.topk(beam_size)  # [1, beam_size]
+                    probs = torch.log_softmax(Y.squeeze(1), dim=-1)  # [1, vocab_size]
+                    topk_probs, topk_ids = probs.topk(beam_size)  # [1, beam_size]
 
-                for i in range(beam_size):
-                    new_token = topk_ids[0, i].item()
-                    new_log_prob = log_prob + topk_probs[0, i].item()
-                    new_beams.append((
-                        tokens + [new_token],
-                        new_log_prob,
-                        new_state
-                    ))
+                    for i in range(beam_size):
+                        new_token = topk_ids[0, i].item()
+                        new_log_prob = log_prob + topk_probs[0, i].item()
+                        new_beams.append((
+                            tokens + [new_token],
+                            new_log_prob,
+                            new_state
+                        ))
 
-            beams = sorted(new_beams, key=lambda x: x[1] / ((len(x[0]) ** length_penalty)), reverse=True)[:beam_size]
+                beams = sorted(new_beams, key=lambda x: x[1] / ((len(x[0]) ** length_penalty)), reverse=True)[:beam_size]
 
-        # Step 4: Return best sequence
-        best_tokens, best_log_prob, _ = max(beams, key=lambda x: x[1] / ((len(x[0]) ** length_penalty)))
-        return torch.tensor(best_tokens[1:]).unsqueeze(0)  # remove BOS
+            # Step 4: Return best sequence
+            best_tokens, best_log_prob, _ = max(beams, key=lambda x: x[1] / ((len(x[0]) ** length_penalty)))
+            return torch.tensor(best_tokens[1:]).unsqueeze(0)  # remove BOS
     
     def loadDict(self, modelName: str, suffix: str = '_bestBleu'):
         checkpointPath = 'checkpoints\\' + modelName + suffix + '.pth'
