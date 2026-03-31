@@ -22,7 +22,7 @@ modelDict = {
 dataModeDict = {
     "europarl": {
         "dropout": 0.15,
-        "warmup_steps": 1300,
+        "warmup_steps": 4000,
         "src": f"europarl-v7.fr-en.clean.{SRC_LANG}",
         "tgt": f"europarl-v7.fr-en.clean.{TRG_LANG}"
     },
