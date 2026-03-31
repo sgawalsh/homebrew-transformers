@@ -245,9 +245,11 @@ class source_target_dataloader:
         )
         return loader
     
-    def get_rand_sample(self, n, isEval=True):
+    def get_rand_sample(self, n, isEval=True, seed = 0):
         with open(f'{os.getcwd()}//data//{DATA_MODE}_{"test" if isEval else "train"}_{SRC_LANG}-{TRG_LANG}_bpe.pkl', 'rb') as f:
             data = pickle.load(f)
+        if seed:
+            random.seed(seed)
         return collate_fn(random.sample(data, n), pad_id=self.tokenizer.token_to_id('<pad>'))
     
 # clean_data("europarl-v7.fr-en.en", "europarl-v7.fr-en.fr", "europarl-v7.fr-en.clean.en", "europarl-v7.fr-en.clean.fr")

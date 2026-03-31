@@ -2,18 +2,31 @@ import model, torch, data, sacrebleu
 from tqdm import tqdm
 from tokenizers import Tokenizer
 
-def greedy_eval(n: int, myModel: model.EncoderDecoder, myData: data.source_target_dataloader):
+def greedy_eval(n: int, myModel: model.EncoderDecoder, myData: data.source_target_dataloader, seed: int = 0, minStep: int = 5):
     myModel.eval()
-    input = myData.get_rand_sample(n)
-    preds, _ = myModel.my_predict_step(input[0], input[2], myData.tokenizer.token_to_id('<bos>'), round(input[0].shape[1] * 1.5))
+    input = myData.get_rand_sample(n, seed=seed)
+    try:
+        preds, _ = myModel.my_predict_step(input[0], input[2], myData.tokenizer.token_to_id('<bos>'), round(input[0].shape[1] * 1.5))
+    except torch.OutOfMemoryError:
+        print("Initial prediction failed with OOM error, attempting batch-wise prediction.")
+        torch.cuda.empty_cache()
+        preds = torch.zeros((0, input[0].shape[1]), dtype=torch.long)
+        for i in range(0, input[0].shape[0], minStep):
+            try:
+                pred, _ = myModel.my_predict_step(input[0][i:i+minStep], input[2][i:i+minStep], myData.tokenizer.token_to_id('<bos>'), round(input[0].shape[1] * 1.5))
+                preds = torch.cat((preds, pred), dim=0)
+            except torch.OutOfMemoryError:
+                torch.cuda.empty_cache()
+                print(f"Batch {i} failed with OOM error, stopping.")
+                return
 
     print_results(input[0].tolist(), input[-1].tolist(), preds.tolist(), myData.tokenizer)
     print_sacre_bleu(input[-1].tolist(), preds.tolist(), myData.tokenizer)
 
-def beam_eval(myModel: model.EncoderDecoder, n: int):
+def beam_eval(myModel: model.EncoderDecoder, n: int, seed: int = 0):
     myModel.eval()
     myData = data.source_target_dataloader()
-    sampleData = list(zip(*myData.get_rand_sample(n)))
+    sampleData = list(zip(*myData.get_rand_sample(n, seed=seed)))
     srcList, refList, canList = [], [], []
     for el in tqdm(sampleData):
         pred = myModel.my_beam_search_predict_step(torch.unsqueeze(el[0], 0), torch.unsqueeze(el[2], 0), myData.tokenizer.token_to_id('<bos>'), round(el[0].shape[0] * 1.5))
