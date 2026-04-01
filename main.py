@@ -18,7 +18,7 @@ def load_model_data_trainer(modelParams, dropout):
 
 def fit_model(myTrainer: trainer.trainer, myModel: model.Seq2Seq, modelName, warmup):
     try:
-        myTrainer.fit(myModel, epochs=4, showTranslations=False, loadModel=False, shutDown=settings.SHUTDOWN_ON_COMPLETE, modelName = modelName, calcBleu=True, bleuPriority=False, fromBest = True, warmup=warmup)
+        myTrainer.fit(myModel, epochs=5, showTranslations=False, loadModel=True, shutDown=settings.SHUTDOWN_ON_COMPLETE, modelName = modelName, calcBleu=True, bleuPriority=False, fromBest = True, warmup=warmup)
     except Exception as e:
         logger.exception("Exception occurred", exc_info=e)
         if settings.SHUTDOWN_ON_ERROR:
@@ -26,15 +26,16 @@ def fit_model(myTrainer: trainer.trainer, myModel: model.Seq2Seq, modelName, war
 
 device = settings.device
 torch.set_default_device(device)
-modelName = settings.MODEL_PARAMS + "_" + settings.SRC_LANG + "-" + settings.TRG_LANG
+modelName = f"{settings.MODEL_PARAMS}_{settings.DATA_MODE}_{settings.SRC_LANG}-{settings.TRG_LANG}"
 myModel, myData, myTrainer = load_model_data_trainer(settings.MODEL_PARAMS, settings.dataModeDict[settings.DATA_MODE]["dropout"])
 
 fit_model(myTrainer, myModel, modelName, settings.dataModeDict[settings.DATA_MODE]["warmup_steps"])
 # myTrainer.loadModelDict(modelName)
 # myTrainer.eval_cycle(myModel, showTranslations=False, calcBleu=True)
 
-# decode.greedy_eval(100, myModel, myData)
-# decode.beam_eval(myModel, 50)
+# eval functions
+# decode.greedy_eval(100, myModel, myData, 1)
+# decode.beam_eval(myModel, 100, 1)
 
 '''
 ENCODER
