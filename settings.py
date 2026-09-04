@@ -17,6 +17,7 @@ modelDict = {
     "Half": {"num_hiddens": 256, "num_blks": 3, "dropout": 0.1, "ffn_num_hiddens": 1024, "num_heads": 4},
     "Small": {"num_hiddens": 128, "num_blks": 2, "dropout": 0.1, "ffn_num_hiddens": 512, "num_heads": 2},
     "SmallNoDrop": {"num_hiddens": 128, "num_blks": 2, "dropout": 0, "ffn_num_hiddens": 512, "num_heads": 2},
+    "Tiny": {"num_hiddens": 64, "num_blks": 1, "dropout": 0.1, "ffn_num_hiddens": 256, "num_heads": 1},
     }
 
 dataModeDict = {
