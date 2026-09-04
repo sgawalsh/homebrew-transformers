@@ -2,7 +2,7 @@ import model, torch, data, sacrebleu
 from tqdm import tqdm
 from tokenizers import Tokenizer
 
-def greedy_eval(n: int, myModel: model.EncoderDecoder, myData: data.source_target_dataloader, seed: int = 0, minStep: int = 5):
+def greedy_eval(myModel: model.EncoderDecoder, n: int, myData: data.source_target_dataloader, seed: int = 0, minStep: int = 5):
     myModel.eval()
     input = myData.get_rand_sample(n, seed=seed)
     try:
@@ -23,13 +23,13 @@ def greedy_eval(n: int, myModel: model.EncoderDecoder, myData: data.source_targe
     print_results(input[0].tolist(), input[-1].tolist(), preds.tolist(), myData.tokenizer)
     print_sacre_bleu(input[-1].tolist(), preds.tolist(), myData.tokenizer)
 
-def beam_eval(myModel: model.EncoderDecoder, n: int, seed: int = 0):
+def beam_eval(myModel: model.EncoderDecoder, n: int, seed: int = 0, nBeams = 4, lengthPenalty = 0.6):
     myModel.eval()
     myData = data.source_target_dataloader()
     sampleData = list(zip(*myData.get_rand_sample(n, seed=seed)))
     srcList, refList, canList = [], [], []
     for el in tqdm(sampleData):
-        pred = myModel.my_beam_search_predict_step(torch.unsqueeze(el[0], 0), torch.unsqueeze(el[2], 0), myData.tokenizer.token_to_id('<bos>'), round(el[0].shape[0] * 1.5))
+        pred = myModel.my_beam_search_predict_step(torch.unsqueeze(el[0], 0), torch.unsqueeze(el[2], 0), myData.tokenizer.token_to_id('<bos>'), round(el[0].shape[0] * 1.5), nBeams, lengthPenalty)
         srcList.append(torch.squeeze(el[0]).tolist())
         refList.append(torch.squeeze(el[-1]).tolist())
         canList.append(torch.squeeze(pred).tolist())

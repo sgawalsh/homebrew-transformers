@@ -11,10 +11,8 @@ import matplotlib.pyplot as plt
 bleuSuffix, lossSuffix = "_bestBleu", "_bestLoss"
 
 class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
-    def __init__(self, optimizer, d_model, warmup_steps=4000, min_lr=1e-6, last_epoch=-1, use_warmup_quadratic=False, max_lr = 0.00005):
+    def __init__(self, optimizer, d_model, warmup_steps=4000, min_lr=1e-6, last_epoch=-1, use_warmup_quadratic=False):
         self.d_model_constant = d_model ** -0.5
-        self.scale_factor = settings.MAX_TOKENS / settings.MAX_TOKENS_REF
-        self.max_lr = max_lr / self.d_model_constant
         if use_warmup_quadratic:
             self.solve_constants()
         else:
@@ -27,38 +25,30 @@ class TransformerLRScheduler(torch.optim.lr_scheduler._LRScheduler):
 
     def _get_lr_warmup(self):
         """Called during warmup, then replaced once warmup is complete."""
-        effective_step = max(self.last_epoch * self.scale_factor, 1e-8)
         # warmup_term = effective_step * self.warmup_steps_constant
-        warmup_term = self.warmup_fn(effective_step)
-        decay_term = effective_step ** -0.5
+        self.warmup_term = self.warmup_fn(self.last_epoch)
+        try:
+            self.decay_term = self.last_epoch ** -0.5
+        except ZeroDivisionError:
+            self.decay_term = 1e-8 ** -0.5
 
         # when decay term becomes smaller, permanently switch
-        if decay_term < warmup_term:
+        if self.decay_term < self.warmup_term:
             # Replace get_lr with post-warmup version
             self.get_lr = self._get_lr_decay.__get__(self, TransformerLRScheduler)
-            scale = self.d_model_constant * decay_term
+            scale = self.d_model_constant * self.decay_term
         else:
-            scale = self.d_model_constant * warmup_term
+            scale = self.d_model_constant * self.warmup_term
 
         return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
 
     def _get_lr_decay(self):
         """Post-warmup: only decay term matters."""
-        scale = self.d_model_constant * (self.last_epoch * self.scale_factor) ** -0.5
+        scale = self.d_model_constant * self.last_epoch ** -0.5
         return [max(base_lr * scale, self.min_lr) for base_lr in self.base_lrs]
     
     def _linear_warmup(self, x):
-        return min(x * self.warmup_steps_constant, self.max_lr)
-    
-    def solve_constants(self):
-        self.max_lr = self.max_lr / self.d_model_constant
-        self.x_intercept = self.max_lr ** -2
-        a = -self.max_lr / (self.x_intercept ** 2)
-
-        def _quadratic_warmup(self, x):
-            return a * (x - self.x_intercept) ** 2 + self.max_lr
-        
-        self.warmup_fn = _quadratic_warmup.__get__(self, TransformerLRScheduler)
+        return x * self.warmup_steps_constant
 
 class trainer:
     def __init__(self, myData: source_target_dataloader, myModel: Seq2Seq, smoothing = False):
@@ -70,8 +60,9 @@ class trainer:
         self.bleuWeights = {1: (1, 0, 0, 0), 2: (.5, .5, 0, 0), 3: (.33, .33, .33, 0), 4: (.25, .25, .25, .25)}
         self.smoothingFn = SmoothingFunction().method1 if smoothing else None
         self.evalDataloader, self.trainDataloader = None, None
+        self.batchRepeats = settings.MAX_TOKENS_REF / settings.MAX_TOKENS
 
-    def fit(self, model: Seq2Seq, epochs = 1, showTranslations = False, calcBleu = True, loadModel = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, warmup = 4000):
+    def fit(self, model: Seq2Seq, epochs = 1, showTranslations = False, calcBleu = True, loadModelIfAvailable = False, shutDown = False, modelName = "myModel", bleuPriority = True, fromBest = True, warmup = 4000):
         self.optim = torch.optim.Adam(self.model.parameters(), lr = 1, betas=(0.9, 0.98), eps=1e-9)
         # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim)
         self.scheduler = TransformerLRScheduler(self.optim, model.encoder.embedding.embedding_dim, warmup_steps=warmup)
@@ -86,13 +77,18 @@ class trainer:
         self.writer = SummaryWriter(log_dir = f'runs/encoderDecoder/{modelName}')
         checkpointPath = f'checkpoints/{modelName}'
         
-        if loadModel:
-            if fromBest:
-                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModelState(checkpointPath + (bleuSuffix if bleuPriority else lossSuffix))
-            else:
-                trainLoss, trainBleu, evalLoss, evalBleu = self.loadModelState(checkpointPath)
-            for param_group, lr in zip(self.optim.param_groups, self.scheduler.get_last_lr()):
-                param_group['lr'] = lr
+        if loadModelIfAvailable:
+            try:
+                if fromBest:
+                    trainLoss, trainBleu, evalLoss, evalBleu = self.loadModelState(checkpointPath + (bleuSuffix if bleuPriority else lossSuffix))
+                else:
+                    trainLoss, trainBleu, evalLoss, evalBleu = self.loadModelState(checkpointPath)
+                for param_group, lr in zip(self.optim.param_groups, self.scheduler.get_last_lr()):
+                    param_group['lr'] = lr
+            except Exception as e:
+                print(e)
+                print("Continuing with new weights")
+                
 
         if not self.evalDataloader:
             self.evalDataloader = self.data.val_dataloader()
@@ -223,12 +219,12 @@ class trainer:
             torch.set_grad_enabled(True)
         
         dataLength = len(dataGen.dataset)
-        runningLoss, totalBleuScore, processed = 0.0, 0.0, 0
+        runningLoss, totalBleuScore, processed, batchI = 0.0, 0.0, 0, 0
         start = time()
         for data in dataGen:
 
             Y = self.model(*data[:-1]) # (srcTensor, tgtTensor(t), srcValidLens, tgtValidLens)
-            loss = self._loss(Y, data[-1]) # (tgtTensor(t+1))
+            rawLoss = self._loss(Y, data[-1]) # (tgtTensor(t+1))
 
             if self.showTranslations:
                 self._show_translations(data[0], torch.argmax(Y.detach(), 2), data[-1])
@@ -244,21 +240,28 @@ class trainer:
                         pass
             
             if not isEval:
-                with torch.no_grad():
-                    loss.backward()
+                (rawLoss / self.batchRepeats).backward()
+                batchI += 1
+                if batchI >= self.batchRepeats:
                     self.optim.step()
                     self.scheduler.step()
                     self.optim.zero_grad(set_to_none=True)
+                    batchI = 0
                     
             batchSize = data[0].shape[0]
-            runningLoss += loss.item() * batchSize
+            runningLoss += rawLoss.item() * batchSize
             processed += batchSize
             try:
-                print(f'{self.i}/{self.epochs} - {processed:,}/{dataLength:,} - {100 * processed/dataLength:.2f}% - Running Loss: {runningLoss / processed:.3f} - Loss: {loss.item():.3f} - Bleu: {totalBleuScore / processed * 100:.2f} - Learning Rate: {self.scheduler.get_lr()[0]:.2e} - Speed: {(processed / (time() - start)):.2f}', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
+                print(f'''{self.i}/{self.epochs} - {processed:,}/{dataLength:,} - {100 * processed/dataLength:.2f}% - Running Loss: {runningLoss / processed:.3f} - Loss: {rawLoss.item():.3f} - Bleu: {totalBleuScore / processed * 100:.2f} - Learning Rate: {self.optim.param_groups[0]["lr"]:.2e} - Speed: {(processed / (time() - start)):.2f}''', end= '\r', flush=True) # - Speed: {i * self.data.batch_size / (time() - start):.3f}
             except ZeroDivisionError:
                 pass
 
         print()
+
+        if not isEval and batchI > 0:
+            self.optim.step()
+            self.scheduler.step()
+            self.optim.zero_grad(set_to_none=True)
 
         return runningLoss / processed, totalBleuScore / processed * 100 if self.calcBleu else 0.0
 
@@ -266,4 +269,4 @@ class trainer:
         """Defined in :numref:`sec_softmax_concise`"""
         Y_hat = torch.reshape(Y_hat, (-1, Y_hat.shape[-1]))
         Y = torch.reshape(Y, (-1,))
-        return F.cross_entropy(Y_hat, Y, reduction='mean' if averaged else 'none', label_smoothing=0.1)
+        return F.cross_entropy(Y_hat, Y, reduction='mean' if averaged else 'none', label_smoothing=0.1, ignore_index=self.data.tokenizer.token_to_id('<pad>'))
